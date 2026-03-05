@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <?!= HtmlService.createHtmlOutputFromFile('css').getContent(); ?>
+</head>
+<body class="bg-light">
+
+  <nav class="navbar navbar-light bg-white sticky-top shadow-sm mb-4">
+    <div class="container-fluid">
+      <span class="navbar-brand d-flex align-items-center fw-bold text-primary">
+        <i class="bi bi-mailbox2 h2 me-2 mb-0"></i>
+        <span style="font-size: 1.2rem;">
+          <ruby>宿題<rt>しゅくだい</rt></ruby>ポスト
+        </span>
+      </span>
+      <div class="d-flex align-items-center">
+        <button class="btn btn-link text-secondary p-0 me-2" onclick="app.showAdminAuth()">
+          <i class="bi bi-gear-fill h4"></i>
+        </button>
+        <small class="text-muted fw-bold" style="font-size: 0.75rem;">v1.0</small>
+      </div>
+    </div>
+  </nav>
+
+  <div id="loading" class="position-fixed top-0 start-0 w-100 h-100 bg-white d-flex flex-column justify-content-center align-items-center" style="z-index: 9999; opacity: 1; transition: opacity 0.3s;">
+    <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+    <p class="mt-3 fw-bold text-muted"><ruby>読<rt>よ</rt></ruby>み<ruby>込<rt>こ</rt></ruby>み<ruby>中<rt>ちゅう</rt></ruby>...</p>
+  </div>
+
+  <main class="container" style="max-width: 800px;">
+    
+    <div id="view-setup" class="card shadow-sm text-center p-5 d-none">
+      <div class="card-body">
+        <h1 class="display-1 text-primary mb-3"><i class="bi bi-rocket-takeoff-fill"></i></h1>
+        <h2 class="h4 fw-bold mb-3">ようこそ！</h2>
+        <button class="btn btn-primary btn-lg w-100 rounded-pill fw-bold" onclick="app.runSetup()">
+          <i class="bi bi-magic me-2"></i>システムを<ruby>初期化<rt>しょきか</rt></ruby>する
+        </button>
+      </div>
+    </div>
+
+    <!-- 待機画面 -->
+    <div id="view-standby" class="text-center py-4 fade-in d-none">
+      <div id="mode-barcode">
+        <div class="mb-4 text-muted opacity-25">
+          <i class="bi bi-qr-code-scan" style="font-size: 6rem;"></i>
+        </div>
+        <h2 class="h4 fw-bold text-secondary mb-4">
+          バーコードを<ruby>見<rt>み</rt></ruby>せてね
+        </h2>
+        <button class="btn btn-outline-primary rounded-pill px-4 py-2" onclick="app.toggleInputMode('keypad')">
+          <i class="bi bi-grid-3x3-gap-fill me-2"></i><ruby>数字<rt>すうじ</rt></ruby>で<ruby>入力<rt>にゅうりょく</rt></ruby>する
+        </button>
+      </div>
+      <div id="mode-keypad" class="d-none">
+        <h2 class="h5 fw-bold text-secondary mb-3"><ruby>番号<rt>ばんごう</rt></ruby>を<ruby>入力<rt>にゅうりょく</rt></ruby>してね</h2>
+        <div class="display-4 fw-bold text-primary mb-4 p-2 bg-white rounded border mx-auto d-flex align-items-center justify-content-center" id="keypad-display" style="max-width: 300px; min-height: 4rem; letter-spacing: 0.1em;"></div>
+        <div class="row g-2 justify-content-center mx-auto" style="max-width: 320px;">
+          <div class="col-4"><button class="btn btn-light w-100 py-3 fw-bold fs-4 shadow-sm border" onclick="app.keypadInput('7')">7</button></div>
+          <div class="col-4"><button class="btn btn-light w-100 py-3 fw-bold fs-4 shadow-sm border" onclick="app.keypadInput('8')">8</button></div>
+          <div class="col-4"><button class="btn btn-light w-100 py-3 fw-bold fs-4 shadow-sm border" onclick="app.keypadInput('9')">9</button></div>
+          <div class="col-4"><button class="btn btn-light w-100 py-3 fw-bold fs-4 shadow-sm border" onclick="app.keypadInput('4')">4</button></div>
+          <div class="col-4"><button class="btn btn-light w-100 py-3 fw-bold fs-4 shadow-sm border" onclick="app.keypadInput('5')">5</button></div>
+          <div class="col-4"><button class="btn btn-light w-100 py-3 fw-bold fs-4 shadow-sm border" onclick="app.keypadInput('6')">6</button></div>
+          <div class="col-4"><button class="btn btn-light w-100 py-3 fw-bold fs-4 shadow-sm border" onclick="app.keypadInput('1')">1</button></div>
+          <div class="col-4"><button class="btn btn-light w-100 py-3 fw-bold fs-4 shadow-sm border" onclick="app.keypadInput('2')">2</button></div>
+          <div class="col-4"><button class="btn btn-light w-100 py-3 fw-bold fs-4 shadow-sm border" onclick="app.keypadInput('3')">3</button></div>
+          <div class="col-4"><button class="btn btn-danger w-100 py-3 fw-bold fs-4 shadow-sm border text-white" onclick="app.keypadClear()"><i class="bi bi-backspace"></i></button></div>
+          <div class="col-4"><button class="btn btn-light w-100 py-3 fw-bold fs-4 shadow-sm border" onclick="app.keypadInput('0')">0</button></div>
+          <div class="col-4"><button class="btn btn-primary w-100 py-3 fw-bold fs-4 shadow-sm border text-white" onclick="app.keypadSubmit()"><i class="bi bi-check-lg"></i></button></div>
+        </div>
+        <button class="btn btn-link text-secondary mt-4" onclick="app.toggleInputMode('barcode')">
+          <i class="bi bi-upc-scan me-2"></i>バーコードに<ruby>戻<rt>もど</rt></ruby>る
+        </button>
+      </div>
+      <input type="text" id="barcode-input" class="form-control opacity-0 position-absolute" autocomplete="off">
+    </div>
+
+    <!-- 生徒画面 -->
+    <div id="view-student" class="d-none fade-in" style="max-width: 600px; margin: 0 auto;">
+      <div class="card shadow-sm border-0 mb-4 bg-white">
+        <div class="card-body text-center p-4">
+          <small class="text-muted d-block mb-1">こんにちは</small>
+          <h2 class="h3 fw-bold text-primary mb-0">
+            <span id="st-name"></span> <small class="fs-6 text-dark">さん</small>
+          </h2>
+        </div>
+      </div>
+      <p class="h5 fw-bold mb-3 ps-2 border-start border-4 border-warning">
+        <ruby>今日<rt>きょう</rt></ruby>だすもの
+      </p>
+      <div id="task-list" class="row g-3 mb-5"></div>
+      <div class="d-grid gap-3">
+        <button class="btn btn-primary btn-lg rounded-pill py-3 fw-bold shadow-sm" onclick="app.submit()">
+          <i class="bi bi-send-fill me-2"></i><ruby>提出<rt>ていしゅつ</rt></ruby>する
+        </button>
+        <button class="btn btn-outline-secondary rounded-pill" onclick="app.reset()">
+          やめる（<ruby>最初<rt>さいしょ</rt></ruby>に<ruby>戻<rt>もど</rt></ruby>る）
+        </button>
+      </div>
+    </div>
+
+    <!-- 管理画面 -->
+    <div id="view-admin" class="d-none fade-in">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h5 fw-bold mb-0"><i class="bi bi-sliders me-2"></i><ruby>先生<rt>せんせい</rt></ruby><ruby>用<rt>よう</rt></ruby>メニュー</h2>
+        <button class="btn btn-sm btn-outline-secondary" onclick="app.reset()">
+          <ruby>閉<rt>と</rt></ruby>じる
+        </button>
+      </div>
+
+      <ul class="nav nav-pills nav-fill mb-3 bg-white p-2 rounded shadow-sm" id="admin-tab" role="tablist">
+        <li class="nav-item"><button class="nav-link active fw-bold" id="tab-tasks" data-bs-toggle="pill" data-bs-target="#content-tasks"><i class="bi bi-list-check me-1"></i>課題</button></li>
+        <li class="nav-item"><button class="nav-link fw-bold" id="tab-students" data-bs-toggle="pill" data-bs-target="#content-students"><i class="bi bi-people-fill me-1"></i>児童</button></li>
+        <li class="nav-item"><button class="nav-link fw-bold" id="tab-report" data-bs-toggle="pill" data-bs-target="#content-report"><i class="bi bi-bar-chart-fill me-1"></i>分析</button></li>
+        <li class="nav-item"><button class="nav-link fw-bold" id="tab-config" data-bs-toggle="pill" data-bs-target="#content-config"><i class="bi bi-gear-fill me-1"></i>設定</button></li>
+      </ul>
+
+      <div class="tab-content">
+        <!-- 課題設定 (Enhanced) -->
+        <div class="tab-pane fade show active" id="content-tasks">
+          
+          <!-- 日付別表示エリア -->
+          <div class="card shadow-sm border-0 mb-4 bg-primary bg-opacity-10">
+            <div class="card-body">
+              <h6 class="fw-bold text-primary mb-3">
+                <i class="bi bi-calendar-check me-2"></i>日付ごとの有効な課題
+              </h6>
+              <div class="d-flex align-items-center mb-3">
+                <input type="date" id="adm-check-date" class="form-control" onchange="app.loadDailyTasks()">
+                <button class="btn btn-primary ms-2 text-nowrap" onclick="app.setCheckDateToday()">今日</button>
+              </div>
+              <ul id="admin-daily-task-list" class="list-group bg-white rounded">
+                <!-- JSで生成 -->
+              </ul>
+              <small class="text-muted mt-2 d-block">
+                ※ リストのゴミ箱ボタンを押すと、<strong class="text-danger">その日だけ</strong>課題を除外（キャンセル）します。
+              </small>
+            </div>
+          </div>
+
+          <!-- 新規登録・設定一覧 -->
+          <h6 class="fw-bold text-secondary ps-2 border-start border-3 border-secondary mb-3">課題ルールの管理</h6>
+          <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white fw-bold text-secondary"><i class="bi bi-plus-circle me-2"></i>新規ルールの追加</div>
+            <div class="card-body bg-light">
+              <div class="row g-2">
+                <div class="col-12 col-md-3">
+                  <select id="adm-type" class="form-select" onchange="app.toggleAdminInputs()">
+                    <option value="日付指定">📅 日付指定</option>
+                    <option value="曜日固定">🔄 曜日固定</option>
+                    <option value="毎日（平日）">🏢 平日毎日</option>
+                    <option value="週回数">📅 週回数</option>
+                    <option value="特別">🌟 特別</option>
+                  </select>
+                </div>
+                <div class="col-12 col-md-5">
+                  <input type="date" id="adm-date" class="form-control">
+                  <select id="adm-day" class="form-select d-none"><option value="月">月</option><option value="火">火</option><option value="水">水</option><option value="木">木</option><option value="金">金</option></select>
+                  <div id="adm-week-count" class="d-none input-group">
+                    <span class="input-group-text">週</span>
+                    <input type="number" id="adm-count" class="form-control" min="1" max="7" value="3">
+                    <span class="input-group-text">回</span>
+                  </div>
+                  <div id="adm-special" class="d-none input-group"><input type="date" id="adm-start" class="form-control"><span class="input-group-text">~</span><input type="date" id="adm-dead" class="form-control"></div>
+                </div>
+                <div class="col-12 col-md-4"><input type="text" id="adm-name" class="form-control" placeholder="課題名"></div>
+                <div class="col-12"><button class="btn btn-secondary w-100 fw-bold" onclick="app.addTask()">ルールを追加</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="card shadow-sm border-0">
+            <ul id="admin-task-list" class="list-group list-group-flush"></ul>
+          </div>
+        </div>
+
+        <!-- 児童管理 -->
+        <div class="tab-pane fade" id="content-students">
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <button class="btn btn-success w-100 fw-bold" onclick="app.showAddStudentModal()"><i class="bi bi-person-plus-fill me-2"></i>個別登録</button>
+            </div>
+            <div class="col-6">
+              <button class="btn btn-outline-success w-100 fw-bold" onclick="app.showBulkAddStudentModal()"><i class="bi bi-file-earmark-spreadsheet-fill me-2"></i>一括登録</button>
+            </div>
+          </div>
+          <div class="card shadow-sm border-0 overflow-hidden"><table class="table table-hover align-middle mb-0"><tbody id="admin-student-list"></tbody></table></div>
+        </div>
+
+        <!-- 分析レポート -->
+        <div class="tab-pane fade" id="content-report">
+          <div class="card shadow-sm border-0 mb-3">
+            <div class="card-body">
+              <div class="row g-2 mb-2">
+                <div class="col-3"><button class="btn btn-primary w-100 btn-sm fw-bold" onclick="app.setPeriod('day')">今日</button></div>
+                <div class="col-3"><button class="btn btn-outline-secondary w-100 btn-sm" onclick="app.setPeriod('week')">今週</button></div>
+                <div class="col-3"><button class="btn btn-outline-secondary w-100 btn-sm" onclick="app.setPeriod('month')">今月</button></div>
+                <div class="col-3"><button class="btn btn-outline-secondary w-100 btn-sm" onclick="app.setPeriod('term')">1学期</button></div>
+              </div>
+              <div class="input-group input-group-sm">
+                <input type="date" id="report-start" class="form-control">
+                <span class="input-group-text">~</span>
+                <input type="date" id="report-end" class="form-control">
+                <button class="btn btn-primary" onclick="app.loadReport()">集計</button>
+              </div>
+            </div>
+          </div>
+          <div id="report-result" class="d-none">
+            <div class="card shadow-sm border-0 mb-3 bg-white">
+              <div class="card-body text-center">
+                <h6 class="text-muted fw-bold small">期間内の提出率</h6>
+                <div class="display-4 fw-bold text-primary"><span id="report-overall-rate">0</span>%</div>
+              </div>
+            </div>
+            <h6 class="fw-bold text-secondary ps-2 border-start border-3 border-secondary">児童別 提出状況</h6>
+            <div class="card shadow-sm border-0">
+              <ul id="report-student-stats" class="list-group list-group-flush"></ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- 設定 -->
+        <div class="tab-pane fade" id="content-config">
+          <div class="card shadow-sm border-0 mb-3">
+            <div class="card-body p-4">
+              <div class="mb-3">
+                <label class="form-label fw-bold small text-muted">通知時間</label>
+                <select id="conf-time" class="form-select"><option value="15">15:00</option><option value="16">16:00</option><option value="17">17:00</option><option value="18">18:00</option></select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-bold small text-muted">通知先メールアドレス</label>
+                <input type="email" id="conf-email" class="form-control" placeholder="空欄の場合はオーナーに送信">
+                <div class="form-text">未入力の場合は、このアプリを作成したアカウントに届きます。</div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-bold small text-muted">件名</label>
+                <input type="text" id="conf-subject" class="form-control">
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-bold small text-muted">管理PIN</label>
+                <input type="text" id="conf-pass" class="form-control" placeholder="****">
+              </div>
+              <button class="btn btn-success w-100 fw-bold" onclick="app.saveConfig()">保存</button>
+            </div>
+          </div>
+          <button class="btn btn-outline-danger w-100 fw-bold" onclick="app.resetForNewYear()"><i class="bi bi-arrow-repeat me-2"></i>年度更新</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="text-center text-muted py-3 mt-4 border-top">
+    <small>© 2026 宿題ポスト <a href="https://note.com/cute_borage86" target="_blank" class="text-decoration-none text-muted">GIGA山</a></small>
+  </footer>
+
+  <script>const IS_SETUP = <?= isSetup ?>;</script>
+  <?!= HtmlService.createHtmlOutputFromFile('js').getContent(); ?>
+</body>
+</html>
+
+<!-- Bootstrap 5 CSS -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<!-- Bootstrap Icons -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+<!-- Google Fonts: Zen Maru Gothic -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&display=swap" rel="stylesheet">
+
+<style>
+  /* GIGA Standard Base Style */
+  body {
+    font-family: "Zen Maru Gothic", sans-serif;
+    background-color: #f8f9fa; /* Off-white */
+    color: #333;
+    user-select: none; /* 誤操作防止 */
+  }
+
+  /* ルビの調整 */
+  ruby {
+    ruby-position: over;
+  }
+  rt {
+    font-size: 0.6em;
+    color: #888;
+  }
+
+  /* カードスタイル */
+  .card {
+    border-radius: 1rem !important; /* rounded-3相当以上 */
+    transition: transform 0.2s;
+  }
+
+  /* タスクカード（選択可能） */
+  .task-card {
+    cursor: pointer;
+    border: 2px solid transparent;
+  }
+  .task-card:active {
+    transform: scale(0.98);
+  }
+  .task-card.selected {
+    background-color: #e8f0fe; /* Google Blue Light */
+    border-color: #1a73e8;
+  }
+  .task-card.done {
+    background-color: #e9ecef;
+    color: #adb5bd;
+    pointer-events: none;
+  }
+  
+  /* アニメーション */
+  .fade-in {
+    animation: fadeIn 0.5s ease-in-out;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+
+<!-- Bootstrap Bundle -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<!-- SweetAlert2 (Dialogs) -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+/**
+ * Application Logic v1.0 (Email Customization)
+ */
+const app = {
+  currentStudent: null,
+  tasks: [],
+  isSetup: false,
+  isKeypadMode: false,
+  keypadBuffer: '',
+  
+  init: function(serverIsSetup) {
+    this.isSetup = serverIsSetup;
+    if (this.isSetup) {
+      this.switchView('standby');
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('report-start').value = today;
+      document.getElementById('report-end').value = today;
+      document.getElementById('adm-check-date').value = today;
+    } else {
+      this.switchView('setup');
+    }
+    this.showLoading(false);
+    
+    const input = document.getElementById('barcode-input');
+    const standbyView = document.getElementById('view-standby');
+    if(input) {
+      setInterval(() => {
+        const isStandbyActive = standbyView && !standbyView.classList.contains('d-none');
+        if(this.isSetup && isStandbyActive && !this.isKeypadMode && document.activeElement.tagName !== 'INPUT' && !Swal.isVisible()) {
+          input.focus();
+        }
+      }, 500);
+      input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && input.value.trim()) {
+          this.scan(input.value.trim());
+          input.value = '';
+        }
+      });
+    }
+  },
+
+  showLoading: function(show) {
+    const el = document.getElementById('loading');
+    if(el) {
+      if (show) {
+        el.classList.remove('d-none');
+        el.style.display = 'flex';
+        requestAnimationFrame(() => el.style.opacity = 1);
+      } else {
+        el.style.opacity = 0;
+        setTimeout(() => {
+          el.style.display = 'none';
+          el.classList.add('d-none');
+        }, 300);
+      }
+    }
+  },
+
+  toggleInputMode: function(mode) {
+    const barcodeDiv = document.getElementById('mode-barcode');
+    const keypadDiv = document.getElementById('mode-keypad');
+    const display = document.getElementById('keypad-display');
+    const input = document.getElementById('barcode-input');
+    if (mode === 'keypad') {
+      this.isKeypadMode = true;
+      barcodeDiv.classList.add('d-none'); keypadDiv.classList.remove('d-none');
+      this.keypadBuffer = ''; display.innerText = '';
+    } else {
+      this.isKeypadMode = false;
+      keypadDiv.classList.add('d-none'); barcodeDiv.classList.remove('d-none');
+      if(input) input.focus();
+    }
+  },
+  keypadInput: function(num) {
+    const display = document.getElementById('keypad-display');
+    if (this.keypadBuffer.length < 10) { this.keypadBuffer += num; display.innerText = this.keypadBuffer; }
+  },
+  keypadClear: function() {
+    this.keypadBuffer = ''; document.getElementById('keypad-display').innerText = '';
+  },
+  keypadSubmit: function() {
+    if (this.keypadBuffer.trim() === '') return;
+    this.scan(this.keypadBuffer); this.keypadClear();
+  },
+
+  runSetup: function() {
+    Swal.fire({ title: '準備をはじめます', text: 'スプレッドシートを作成しています...', icon: 'info', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    google.script.run.withSuccessHandler((res) => {
+      if(res.success) {
+        Swal.fire({ icon: 'success', title: '完了!', text: 'システムが使えるようになりました。', confirmButtonText: 'はじめる' })
+          .then(() => { this.isSetup = true; this.switchView('standby'); });
+      } else { Swal.fire('エラー', res.error, 'error'); }
+    }).runInitialSetup();
+  },
+
+  scan: function(id) {
+    if (!this.isSetup) return;
+    this.showLoading(true);
+    google.script.run.withSuccessHandler((res) => {
+      this.showLoading(false);
+      if(res.error) { this.toast('error', res.message); return; }
+      this.currentStudent = res.student;
+      this.renderTasks(res.tasks);
+      document.getElementById('st-name').innerText = res.student.name;
+      this.switchView('student');
+    }).withFailureHandler(this.errorHandler).getStudentData(id);
+  },
+
+  renderTasks: function(tasks) {
+    const container = document.getElementById('task-list');
+    container.innerHTML = '';
+    if(tasks.length === 0) { container.innerHTML = '<div class="col-12 text-center text-muted">今日の課題はありません 😊</div>'; return; }
+    tasks.forEach(task => {
+      const col = document.createElement('div'); col.className = 'col-6';
+      const card = document.createElement('div'); card.className = `card task-card h-100 p-3 shadow-sm ${task.done ? 'done' : ''}`;
+      card.onclick = (e) => e.currentTarget.classList.toggle('selected');
+      card.dataset.name = task.name; card.dataset.date = task.date;
+      let badgeHtml = '';
+      if(task.type === '週回数') badgeHtml = `<span class="badge bg-info text-dark mb-2">今週: ${task.weeklyCount}/${task.weeklyTarget}回</span>`;
+      card.innerHTML = `<div class="d-flex align-items-center justify-content-center flex-column h-100" style="pointer-events: none;">${badgeHtml}<i class="bi ${task.done ? 'bi-check-circle-fill text-success' : 'bi-circle text-secondary'} fs-1 mb-2"></i><span class="fw-bold lh-sm text-center">${task.name}</span><small class="text-muted mt-1">${task.done ? '<ruby>提出<rt>ていしゅつ</rt></ruby>済' : ''}</small></div>`;
+      col.appendChild(card); container.appendChild(col);
+    });
+  },
+
+  submit: function() {
+    const selected = document.querySelectorAll('.task-card.selected');
+    if(selected.length === 0) { this.toast('warning', '<ruby>提出<rt>ていしゅつ</rt></ruby>するものを選んでね'); return; }
+    const payload = { id: this.currentStudent.id, name: this.currentStudent.name, tasks: Array.from(selected).map(el => ({ name: el.dataset.name, date: el.dataset.date })) };
+    this.showLoading(true);
+    google.script.run.withSuccessHandler(() => {
+      this.showLoading(false);
+      Swal.fire({ icon: 'success', title: 'できた！', text: `${this.currentStudent.name}さん、うけつけました`, timer: 3000, showConfirmButton: false }).then(() => this.reset());
+    }).submitHomework(payload);
+  },
+
+  reset: function() {
+    this.currentStudent = null; this.switchView('standby');
+    if (this.isKeypadMode) { this.keypadClear(); }
+    else { const input = document.getElementById('barcode-input'); if(input) { input.value = ''; input.focus(); } }
+  },
+
+  switchView: function(viewName) {
+    ['setup', 'standby', 'student', 'admin'].forEach(v => { const el = document.getElementById(`view-${v}`); if(el) el.classList.add('d-none'); });
+    const target = document.getElementById(`view-${viewName}`);
+    if(target) {
+      target.classList.remove('d-none');
+      if(viewName === 'standby' && !this.isKeypadMode) { setTimeout(() => { const input = document.getElementById('barcode-input'); if(input) input.focus(); }, 100); }
+    }
+  },
+
+  showAdminAuth: function() {
+    Swal.fire({ title: '先生用メニュー', input: 'password', inputLabel: 'PINコード', inputPlaceholder: '****', confirmButtonText: 'ログイン', showCancelButton: true })
+    .then((result) => {
+      if (result.isConfirmed) {
+        this.showLoading(true);
+        google.script.run.withSuccessHandler(isValid => {
+          if (isValid) { this.loadAdminData(); } else { this.showLoading(false); this.toast('error', 'パスワードが違います'); }
+        }).verifyPassword(result.value);
+      }
+    });
+  },
+
+  loadAdminData: function() {
+    google.script.run.withSuccessHandler(data => {
+      this.showLoading(false);
+      this.renderAdminList(data.tasks);
+      this.renderStudentList(data.students);
+      if(data.config) {
+        if(data.config.notification_time) document.getElementById('conf-time').value = data.config.notification_time;
+        if(data.config.email_subject) document.getElementById('conf-subject').value = data.config.email_subject;
+        if(data.config.admin_password) document.getElementById('conf-pass').value = data.config.admin_password;
+        if(data.config.notification_email) document.getElementById('conf-email').value = data.config.notification_email;
+      }
+      this.loadDailyTasks();
+      this.switchView('admin');
+      if(document.getElementById('report-date').value) this.loadReport();
+    }).getAdminData();
+  },
+
+  setCheckDateToday: function() {
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('adm-check-date').value = today;
+    this.loadDailyTasks();
+  },
+  loadDailyTasks: function() {
+    const dateStr = document.getElementById('adm-check-date').value;
+    if(!dateStr) return;
+    this.showLoading(true);
+    google.script.run.withSuccessHandler(tasks => {
+      this.showLoading(false);
+      const list = document.getElementById('admin-daily-task-list');
+      list.innerHTML = '';
+      if(tasks.length === 0) {
+        list.innerHTML = '<li class="list-group-item text-center text-muted">この日に有効な課題はありません</li>';
+      } else {
+        tasks.forEach(t => {
+          const li = document.createElement('li');
+          li.className = 'list-group-item d-flex justify-content-between align-items-center';
+          li.innerHTML = `<div><span class="badge bg-primary me-2">${t.type}</span><span class="fw-bold">${t.name}</span></div><button class="btn btn-sm btn-outline-danger" title="この日だけ除外" onclick="app.excludeTask('${t.uuid}', '${dateStr}')"><i class="bi bi-trash"></i></button>`;
+          list.appendChild(li);
+        });
+      }
+    }).getAdminDailyTasks(dateStr);
+  },
+  excludeTask: function(taskUuid, dateStr) {
+    Swal.fire({ title: 'この日だけ除外しますか？', text: `${dateStr} のこの課題を取り消します。`, icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: '除外する' })
+    .then((result) => {
+      if(result.isConfirmed) {
+        this.showLoading(true);
+        google.script.run.withSuccessHandler(tasks => {
+          this.showLoading(false);
+          this.loadDailyTasks(); 
+          this.toast('success', '除外しました');
+        }).excludeTask(taskUuid, dateStr);
+      }
+    });
+  },
+
+  renderAdminList: function(tasks) {
+    const list = document.getElementById('admin-task-list'); list.innerHTML = '';
+    tasks.forEach(t => {
+      const li = document.createElement('li'); li.className = 'list-group-item d-flex justify-content-between align-items-center';
+      let badgeColor = 'bg-secondary';
+      if(t.type === '日付指定') badgeColor = 'bg-primary'; if(t.type === '曜日固定') badgeColor = 'bg-success'; if(t.type === '毎日（平日）') badgeColor = 'bg-warning text-dark'; if(t.type === '週回数') badgeColor = 'bg-info text-dark';
+      li.innerHTML = `<div><span class="badge ${badgeColor} me-2">${t.type}</span><span class="fw-bold">${t.name}</span><br><small class="text-muted">${t.value}</small></div><button class="btn btn-sm btn-outline-danger" onclick="app.deleteTask('${t.uuid}')"><i class="bi bi-trash"></i></button>`;
+      list.appendChild(li);
+    });
+  },
+  toggleAdminInputs: function() {
+    const type = document.getElementById('adm-type').value;
+    const els = { date: document.getElementById('adm-date'), day: document.getElementById('adm-day'), special: document.getElementById('adm-special'), weekCount: document.getElementById('adm-week-count') };
+    Object.values(els).forEach(e => e.classList.add('d-none'));
+    if(type === '日付指定') els.date.classList.remove('d-none'); 
+    if(type === '曜日固定') els.day.classList.remove('d-none'); 
+    if(type === '特別') els.special.classList.remove('d-none');
+    if(type === '週回数') els.weekCount.classList.remove('d-none');
+  },
+  addTask: function() {
+    const type = document.getElementById('adm-type').value, name = document.getElementById('adm-name').value;
+    if(!name) return this.toast('warning', '課題名を入力してください');
+    let value = '平日', deadline = '';
+    if(type === '日付指定') value = document.getElementById('adm-date').value;
+    if(type === '曜日固定') value = document.getElementById('adm-day').value;
+    if(type === '特別') { value = document.getElementById('adm-start').value; deadline = document.getElementById('adm-dead').value; }
+    if(type === '週回数') value = document.getElementById('adm-count').value;
+    this.showLoading(true);
+    google.script.run.withSuccessHandler(data => {
+      this.showLoading(false); this.renderAdminList(data.tasks); document.getElementById('adm-name').value = ''; this.toast('success', '追加しました'); this.loadDailyTasks();
+    }).saveTask({type, value, name, deadline});
+  },
+  deleteTask: function(uuid) {
+    Swal.fire({ title: 'ルールを削除しますか？', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: '削除' }).then((result) => {
+      if (result.isConfirmed) { this.showLoading(true); google.script.run.withSuccessHandler(data => { this.showLoading(false); this.renderAdminList(data.tasks); this.toast('success', '削除しました'); this.loadDailyTasks(); }).deleteTask(uuid); }
+    });
+  },
+
+  renderStudentList: function(students) {
+    const list = document.getElementById('admin-student-list'); list.innerHTML = '';
+    students.forEach(st => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${st.id}</td><td>${st.name}</td><td class="text-end"><button class="btn btn-sm btn-outline-primary me-1" onclick="app.showEditStudentModal('${st.id}','${st.name}','${st.email}')"><i class="bi bi-pencil"></i></button><button class="btn btn-sm btn-outline-danger" onclick="app.deleteStudent('${st.id}')"><i class="bi bi-trash"></i></button></td>`;
+      list.appendChild(tr);
+    });
+  },
+  showAddStudentModal: function() { this.showEditStudentModal('', '', ''); },
+  showEditStudentModal: function(id, name, email) {
+    Swal.fire({
+      title: id ? '児童情報の編集' : '児童の追加',
+      html: `<input id="swal-st-id" class="swal2-input" placeholder="ID" value="${id}" ${id ? 'readonly' : ''}><input id="swal-st-name" class="swal2-input" placeholder="名前" value="${name}"><input id="swal-st-email" class="swal2-input" placeholder="メール(任意)" value="${email}">`,
+      focusConfirm: false, showCancelButton: true, confirmButtonText: '保存',
+      preConfirm: () => {
+        const newId = document.getElementById('swal-st-id').value; const newName = document.getElementById('swal-st-name').value; const newEmail = document.getElementById('swal-st-email').value;
+        if (!newId || !newName) { Swal.showValidationMessage('IDと名前は必須です'); } return { id: newId, name: newName, email: newEmail };
+      }
+    }).then((result) => {
+      if (result.isConfirmed) { this.showLoading(true); google.script.run.withSuccessHandler(data => { this.showLoading(false); this.renderStudentList(data.students); this.toast('success', '保存しました'); }).saveStudent(result.value); }
+    });
+  },
+  showBulkAddStudentModal: function() {
+    Swal.fire({
+      title: '一括登録',
+      html: `<p class="text-muted small text-start">以下の形式で入力・貼付してください：<br>ID,名前,メール(任意)</p><textarea id="swal-bulk-text" class="form-control" style="height: 200px;" placeholder="1001,佐藤,sato@ex.com&#10;1002,鈴木,suzuki@ex.com"></textarea>`,
+      showCancelButton: true, confirmButtonText: '登録', width: '600px', preConfirm: () => document.getElementById('swal-bulk-text').value
+    }).then((result) => {
+      if (result.isConfirmed && result.value) {
+        this.showLoading(true); google.script.run.withSuccessHandler(data => { this.showLoading(false); this.renderStudentList(data.students); this.toast('success', '一括登録しました'); }).bulkSaveStudents(result.value);
+      }
+    });
+  },
+  deleteStudent: function(id) {
+    Swal.fire({ title: '削除しますか？', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: '削除' }).then((result) => {
+      if (result.isConfirmed) { this.showLoading(true); google.script.run.withSuccessHandler(data => { this.showLoading(false); this.renderStudentList(data.students); this.toast('success', '削除しました'); }).deleteStudent(id); }
+    });
+  },
+
+  setPeriod: function(type) {
+    const today = new Date();
+    const startEl = document.getElementById('report-start'); const endEl = document.getElementById('report-end');
+    const fmt = d => d.toISOString().split('T')[0];
+    if (type === 'day') { startEl.value = fmt(today); endEl.value = fmt(today); }
+    else if (type === 'week') {
+      const day = today.getDay(); const diff = today.getDate() - day + (day == 0 ? -6 : 1);
+      const monday = new Date(today.setDate(diff)); const friday = new Date(today.setDate(diff + 4));
+      startEl.value = fmt(monday); endEl.value = fmt(friday);
+    } else if (type === 'month') {
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+      startEl.value = fmt(firstDay); endEl.value = fmt(new Date());
+    } else if (type === 'term') { const year = today.getFullYear(); startEl.value = `${year}-04-01`; endEl.value = `${year}-07-20`; }
+    this.loadReport();
+  },
+  loadReport: function() {
+    const startStr = document.getElementById('report-start').value; const endStr = document.getElementById('report-end').value;
+    if(!startStr || !endStr) return;
+    this.showLoading(true);
+    google.script.run.withSuccessHandler(report => {
+      this.showLoading(false);
+      document.getElementById('report-result').classList.remove('d-none');
+      document.getElementById('report-overall-rate').innerText = report.overallRate;
+      const list = document.getElementById('report-student-stats'); list.innerHTML = '';
+      report.students.forEach(st => {
+        const li = document.createElement('li'); li.className = 'list-group-item d-flex align-items-center justify-content-between';
+        let colorClass = 'bg-danger'; if (st.rate >= 80) colorClass = 'bg-success'; else if (st.rate >= 50) colorClass = 'bg-warning';
+        li.innerHTML = `<div style="width: 30%; font-weight: bold;">${st.name}</div><div class="flex-grow-1 mx-2"><div class="progress" style="height: 20px;"><div class="progress-bar ${colorClass}" role="progressbar" style="width: ${st.rate}%">${st.rate}%</div></div></div><div class="text-muted small" style="width: 60px; text-align: right;">${st.submitted}/${st.required}</div>`;
+        list.appendChild(li);
+      });
+      if(report.students.length === 0) list.innerHTML = '<li class="list-group-item text-center text-muted">データがありません</li>';
+    }).getPeriodReport(startStr, endStr);
+  },
+
+  saveConfig: function() {
+    const notification_time = document.getElementById('conf-time').value;
+    const email_subject = document.getElementById('conf-subject').value;
+    const admin_password = document.getElementById('conf-pass').value;
+    const notification_email = document.getElementById('conf-email').value; // 追加
+    this.showLoading(true);
+    google.script.run.withSuccessHandler(() => { this.showLoading(false); Swal.fire('保存しました', '通知設定を更新しました。', 'success'); }).saveConfig({notification_time, email_subject, admin_password, notification_email});
+  },
+  resetForNewYear: function() {
+    Swal.fire({ title: '年度更新', html: `<div class="text-start"><p>データリセットを実行します。</p></div>`, icon: 'warning', showCancelButton: true, confirmButtonColor: '#dc3545', confirmButtonText: '実行' }).then((result) => {
+      if (result.isConfirmed) { this.showLoading(true); google.script.run.withSuccessHandler(() => { this.showLoading(false); Swal.fire('完了', '準備ができました。', 'success').then(() => location.reload()); }).resetForNewYear(); }
+    });
+  },
+
+  toast: function(icon, title) { const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, timerProgressBar: true }); Toast.fire({ icon: icon, title: title }); },
+  errorHandler: function(e) { app.showLoading(false); Swal.fire('エラー', e.message, 'error'); }
+};
+
+window.onload = () => app.init(IS_SETUP);
+</script>
