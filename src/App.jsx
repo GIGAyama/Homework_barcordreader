@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Mailbox, Settings, ScanLine, Calculator, Trash2, CheckCircle2, Circle, X, Users, Activity, Plus, Check, HeartPulse, ShieldAlert, Printer, FileText, Smile, Moon, Zap, CloudRain, PartyPopper, Sparkles, GraduationCap, ClipboardList, CalendarRange, Database, Download, Upload, AlertTriangle, RefreshCw, Pencil, Save } from 'lucide-react';
+import { Mailbox, Settings, ScanLine, Calculator, Trash2, CheckCircle2, Circle, X, Users, Activity, Plus, Check, HeartPulse, ShieldAlert, Printer, FileText, Smile, Moon, Zap, CloudRain, PartyPopper, Sparkles, GraduationCap, ClipboardList, CalendarRange, Database, Download, Upload, AlertTriangle, RefreshCw, Pencil, Save, UserCheck, UserX, Clock, PlusCircle, MinusCircle } from 'lucide-react';
 
 // ==========================================
 // 🎨 グローバルスタイル設定 (CSS)
@@ -448,8 +448,8 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
   const isSingleDay = dashboardStart === dashboardEnd;
 
   // 🚀 【最適化】1日表示用のデータをメモ化
-  const { singleDayData, singleDaySubmitRate, singleDayFeelingCounts, actedStudentsCount } = useMemo(() => {
-    if (!isSingleDay) return { singleDayData: [], singleDaySubmitRate: 0, singleDayFeelingCounts: {}, actedStudentsCount: 0 };
+  const { singleDayData, singleDaySubmitRate, singleDayFeelingCounts, actedStudentsCount, singleDayAttendance } = useMemo(() => {
+    if (!isSingleDay) return { singleDayData: [], singleDaySubmitRate: 0, singleDayFeelingCounts: {}, actedStudentsCount: 0, singleDayAttendance: {} };
     
     const targetDateObj = new Date(dashboardStart);
     const diffToMon = targetDateObj.getDate() - targetDateObj.getDay() + (targetDateObj.getDay() === 0 ? -6 : 1);
@@ -495,17 +495,30 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
       const isAllDone = totalTasksCount > 0 && completedTasksCount === totalTasksCount;
       const isPartial = completedTasksCount > 0 && completedTasksCount < totalTasksCount;
 
-      return { student, tasks: activeTasks, feelingData, isAllDone, isPartial };
+      // 🗓️ 出欠ステータスの自動判定
+      const hasLog = db.logs.some(l => l.date === dashboardStart && l.studentId === student.id);
+      let attendanceStatus = '未確認';
+      if (hasLog) {
+        attendanceStatus = '出席';
+      } else {
+        const absRec = (db.absences || []).find(a => a.date === dashboardStart && a.studentId === student.id);
+        if (absRec) attendanceStatus = absRec.status;
+      }
+
+      return { student, tasks: activeTasks, feelingData, isAllDone, isPartial, attendanceStatus };
     });
 
     const actedCount = data.filter(d => d.tasks.some(t => t.done) || d.feelingData).length;
     const rate = db.students.length > 0 ? Math.round((actedCount / db.students.length) * 100) : 0;
-    
+
     const counts = { 'げんき': 0, 'ねむい': 0, 'イライラ': 0, 'かなしい': 0 };
     data.forEach(d => { if (d.feelingData) counts[d.feelingData.label]++; });
 
-    return { singleDayData: data, singleDaySubmitRate: rate, singleDayFeelingCounts: counts, actedStudentsCount: actedCount };
-  }, [dashboardStart, db.students, db.tasks, db.logs, isSingleDay]);
+    const attCounts = { '出席': 0, '遅刻': 0, '欠席': 0, '未確認': 0 };
+    data.forEach(d => { attCounts[d.attendanceStatus] = (attCounts[d.attendanceStatus] || 0) + 1; });
+
+    return { singleDayData: data, singleDaySubmitRate: rate, singleDayFeelingCounts: counts, actedStudentsCount: actedCount, singleDayAttendance: attCounts };
+  }, [dashboardStart, db.students, db.tasks, db.logs, db.absences, isSingleDay]);
 
   // 🚀 【最適化】複数日表示用のデータをメモ化
   const { multiDayData, multiSubmitRate, multiTotalRequired, multiTotalSubmitted, multiFeelingCounts } = useMemo(() => {
@@ -524,6 +537,60 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
     return { multiDayData: data, multiSubmitRate: rate, multiTotalRequired: req, multiTotalSubmitted: sub, multiFeelingCounts: counts };
   }, [dashboardStart, dashboardEnd, db.students, db.tasks, db.logs, isSingleDay]);
 
+
+  // ==========================================
+  // 📋 出欠管理ハンドラ
+  // ==========================================
+  const handleMarkAbsence = useCallback((studentId, studentName, status) => {
+    // すでにログ（チェックイン済み）があれば上書きしない
+    const hasLog = db.logs.some(l => l.date === dashboardStart && l.studentId === studentId);
+    if (hasLog) {
+      showToast(`${studentName} さんはチェックイン済みのため変更できません`, 'error');
+      return;
+    }
+    const existing = (db.absences || []).find(a => a.date === dashboardStart && a.studentId === studentId);
+    if (existing) {
+      db.setAbsences((db.absences || []).map(a =>
+        (a.date === dashboardStart && a.studentId === studentId) ? { ...a, status, timestamp: Date.now() } : a
+      ));
+    } else {
+      db.setAbsences([...(db.absences || []), {
+        id: Date.now().toString(), date: dashboardStart, studentId, studentName, status, timestamp: Date.now()
+      }]);
+    }
+    showToast(`${studentName} さんを「${status}」に記録しました`);
+  }, [db, dashboardStart, showToast]);
+
+  const handleClearAbsence = useCallback((studentId, studentName) => {
+    db.setAbsences((db.absences || []).filter(a => !(a.date === dashboardStart && a.studentId === studentId)));
+    showToast(`${studentName} さんの出欠記録を取り消しました`);
+  }, [db, dashboardStart, showToast]);
+
+  // ==========================================
+  // 📝 提出記録の管理ハンドラ
+  // ==========================================
+  const handleAddManualSubmission = useCallback((studentId, studentName, taskName, dateStr) => {
+    const alreadyDone = db.logs.some(l => l.date === dateStr && l.studentId === studentId && l.taskName === taskName);
+    if (alreadyDone) { showToast('すでに提出記録があります', 'error'); return; }
+    const newLog = {
+      id: Math.random().toString(36).substr(2, 9),
+      date: dateStr,
+      studentId,
+      studentName,
+      taskName,
+      feeling: null,
+      timestamp: Date.now(),
+      isManual: true
+    };
+    db.setLogs([...db.logs, newLog]);
+    showToast(`「${taskName}」を提出済みに記録しました`);
+  }, [db, showToast]);
+
+  const handleRemoveSubmission = useCallback((studentId, taskName, dateStr) => {
+    if (!window.confirm(`「${taskName}」の提出記録を取り消しますか？`)) return;
+    db.setLogs(db.logs.filter(l => !(l.date === dateStr && l.studentId === studentId && l.taskName === taskName)));
+    showToast(`「${taskName}」の提出記録を取り消しました`);
+  }, [db, showToast]);
 
   const handleDashboardPresetChange = useCallback((e) => {
     const preset = e.target.value;
@@ -793,18 +860,46 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
               </div>
             </div>
 
+            {/* 🗓️ 出欠サマリー（1日表示のみ） */}
+            {isSingleDay && db.students.length > 0 && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+                <h3 className="text-xs font-bold text-slate-400 mb-3 flex items-center gap-1.5">
+                  <UserCheck size={14} className="text-green-500" /> 出欠サマリー
+                  <span className="ml-1 text-slate-300 font-normal">（クリックして状態を変更できます）</span>
+                </h3>
+                <div className="flex gap-2 flex-wrap">
+                  {[
+                    { key: '出席', bgClass: 'bg-green-50 border-green-200 text-green-700', Icon: UserCheck },
+                    { key: '遅刻', bgClass: 'bg-amber-50 border-amber-200 text-amber-700', Icon: Clock },
+                    { key: '欠席', bgClass: 'bg-red-50 border-red-200 text-red-700', Icon: UserX },
+                    { key: '未確認', bgClass: 'bg-slate-50 border-slate-200 text-slate-500', Icon: Circle },
+                  ].map(({ key, bgClass, Icon }) => (
+                    <div key={key} className={`flex items-center gap-2 px-4 py-2 rounded-xl border font-bold text-sm ${bgClass}`}>
+                      <Icon size={16} />
+                      <span>{key}</span>
+                      <span className="text-lg ml-1">{singleDayAttendance[key] || 0}<span className="text-xs ml-0.5 font-normal">名</span></span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col">
               <div className="p-4 bg-slate-50 border-b border-slate-100 font-bold text-slate-700 text-sm flex justify-between items-center z-10">
                 <span className="flex items-center gap-2"><ClipboardList size={18} className="text-slate-500" /> {isSingleDay ? '対象日の提出状況一覧' : '指定期間の提出・きもち集計一覧'}</span>
-                <span className="text-xs font-normal text-slate-500 bg-white px-2 py-1 rounded shadow-sm">※未提出が目立ちます</span>
+                {isSingleDay
+                  ? <span className="text-xs font-normal text-slate-500 bg-white px-2 py-1 rounded shadow-sm">📌 課題バッジをクリックで提出記録を編集</span>
+                  : <span className="text-xs font-normal text-slate-500 bg-white px-2 py-1 rounded shadow-sm">※未提出が目立ちます</span>
+                }
               </div>
               <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
                 <table className="w-full text-left border-collapse min-w-[600px]">
                   <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm border-b border-slate-200">
                     <tr className="text-xs text-slate-500 font-bold uppercase tracking-wider">
                       <th className="p-4 w-1/4">児童名</th>
+                      {isSingleDay && <th className="p-4 w-28">出欠</th>}
                       <th className="p-4 w-1/4">きもち</th>
-                      <th className="p-4 w-1/2">{isSingleDay ? '対象日の課題（緑: 提出済 / 赤: 未提出）' : '期間内の課題（提出回数 / 必要回数）'}</th>
+                      <th className="p-4 w-1/2">{isSingleDay ? '課題（クリックで提出記録を編集）' : '期間内の課題（提出回数 / 必要回数）'}</th>
                       <th className="p-4 text-center w-24">{isSingleDay ? '完了状態' : '達成率'}</th>
                     </tr>
                   </thead>
@@ -812,6 +907,38 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
                     {isSingleDay && singleDayData.map((data) => (
                       <tr key={data.student.id} className="hover:bg-slate-50 transition-colors">
                         <td className="p-4 font-bold text-slate-800 whitespace-nowrap">{data.student.name}</td>
+
+                        {/* 🗓️ 出欠列 */}
+                        <td className="p-4 whitespace-nowrap align-top">
+                          {data.attendanceStatus === '出席' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 border border-green-200 text-green-700 rounded-lg text-xs font-bold">
+                              <UserCheck size={13} /> 出席
+                            </span>
+                          ) : data.attendanceStatus === '欠席' ? (
+                            <div className="flex flex-col gap-1.5">
+                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-bold">
+                                <UserX size={13} /> 欠席
+                              </span>
+                              <button onClick={() => handleClearAbsence(data.student.id, data.student.name)} className="text-xs text-slate-400 hover:text-slate-600 font-bold underline text-left">取り消し</button>
+                            </div>
+                          ) : data.attendanceStatus === '遅刻' ? (
+                            <div className="flex flex-col gap-1.5">
+                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-xs font-bold">
+                                <Clock size={13} /> 遅刻
+                              </span>
+                              <button onClick={() => handleClearAbsence(data.student.id, data.student.name)} className="text-xs text-slate-400 hover:text-slate-600 font-bold underline text-left">取り消し</button>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-1.5">
+                              <span className="text-xs text-slate-300 font-bold">未確認</span>
+                              <div className="flex gap-1">
+                                <button onClick={() => handleMarkAbsence(data.student.id, data.student.name, '欠席')} className="px-2 py-1 bg-red-50 border border-red-200 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100 active:scale-95 transition-all">欠席</button>
+                                <button onClick={() => handleMarkAbsence(data.student.id, data.student.name, '遅刻')} className="px-2 py-1 bg-amber-50 border border-amber-200 text-amber-600 rounded-lg text-xs font-bold hover:bg-amber-100 active:scale-95 transition-all">遅刻</button>
+                              </div>
+                            </div>
+                          )}
+                        </td>
+
                         <td className="p-4 whitespace-nowrap">
                           {data.feelingData ? (
                             <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border ${data.feelingData.bg} ${data.feelingData.color} text-sm font-bold shadow-sm`}>
@@ -824,20 +951,35 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
                             <span className="text-slate-300 text-sm font-bold">-</span>
                           )}
                         </td>
+
+                        {/* 📝 インタラクティブな課題バッジ（クリックで提出記録を編集） */}
                         <td className="p-4">
                           {data.tasks.length === 0 ? (
                             <span className="text-slate-400 text-sm font-bold bg-slate-100 px-3 py-1 rounded-lg">対象課題なし</span>
                           ) : (
                             <div className="flex flex-wrap gap-2">
                               {data.tasks.map(t => (
-                                <div key={t.name} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold border shadow-sm transition-all ${t.done ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-600 hover:scale-105'}`}>
+                                <button
+                                  key={t.name}
+                                  onClick={() => t.done
+                                    ? handleRemoveSubmission(data.student.id, t.name, dashboardStart)
+                                    : handleAddManualSubmission(data.student.id, data.student.name, t.name, dashboardStart)
+                                  }
+                                  title={t.done ? 'クリックで提出記録を取り消す' : 'クリックで提出を記録する'}
+                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold border shadow-sm transition-all active:scale-95 hover:scale-105 cursor-pointer ${t.done ? 'bg-green-50 border-green-200 text-green-700 hover:bg-red-50 hover:border-red-200 hover:text-red-600' : 'bg-red-50 border-red-200 text-red-600 hover:bg-green-50 hover:border-green-200 hover:text-green-700'}`}
+                                >
                                   {t.done ? <CheckCircle2 size={16} className="text-green-500" /> : <Circle size={16} className="text-red-400" />}
                                   {t.name}
-                                </div>
+                                  {t.done
+                                    ? <MinusCircle size={12} className="opacity-30 ml-0.5" />
+                                    : <PlusCircle size={12} className="opacity-30 ml-0.5" />
+                                  }
+                                </button>
                               ))}
                             </div>
                           )}
                         </td>
+
                         <td className="p-4 text-center whitespace-nowrap">
                            {data.tasks.length === 0 ? (
                               <span className="text-slate-300 font-bold text-sm">-</span>
@@ -1160,8 +1302,9 @@ export default function App() {
   ]);
   const [logs, setLogs] = useLocalStorage('hp_logs', []);
   const [config, setConfig] = useLocalStorage('hp_config', { pin: 'admin' });
+  const [absences, setAbsences] = useLocalStorage('hp_absences', []);
 
-  const db = useMemo(() => ({ students, setStudents, tasks, setTasks, logs, setLogs, config, setConfig }), [students, setStudents, tasks, setTasks, logs, setLogs, config, setConfig]);
+  const db = useMemo(() => ({ students, setStudents, tasks, setTasks, logs, setLogs, config, setConfig, absences, setAbsences }), [students, setStudents, tasks, setTasks, logs, setLogs, config, setConfig, absences, setAbsences]);
   
   const showToastMsg = useCallback((msg, type = 'success') => setToast({ message: msg, type }), []);
 
