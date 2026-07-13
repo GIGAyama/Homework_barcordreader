@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Mailbox, Settings, ScanLine, Calculator, Trash2, CheckCircle2, Circle, X, Users, Activity, Plus, Check, HeartPulse, ShieldAlert, Printer, FileText, Smile, Moon, Zap, CloudRain, PartyPopper, Sparkles, GraduationCap, ClipboardList, CalendarRange, Database, Download, Upload, AlertTriangle, RefreshCw, Pencil, Save, UserCheck, UserX, Clock, PlusCircle, MinusCircle } from 'lucide-react';
+import { Mailbox, Settings, Trash2, CheckCircle2, Circle, X, Users, Activity, Plus, Check, HeartPulse, ShieldAlert, Printer, FileText, Smile, Moon, Zap, CloudRain, PartyPopper, Sparkles, GraduationCap, ClipboardList, CalendarRange, Database, Download, Upload, AlertTriangle, RefreshCw, Pencil, Save, UserCheck, UserX, Clock, PlusCircle, MinusCircle, CalendarOff, Archive, ArchiveRestore } from 'lucide-react';
 
 // ==========================================
 // 🎨 グローバルスタイル設定 (CSS)
 // ==========================================
 const GlobalStyles = () => (
   <style>{`
-    @import url('https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap');
     body {
       font-family: 'Zen Maru Gothic', sans-serif;
       -webkit-tap-highlight-color: transparent; 
@@ -73,6 +72,39 @@ const getLocalDateString = (d = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
+const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
+
+// ⚠️ new Date('YYYY-MM-DD') はUTC深夜として解釈され日付がずれる環境があるため、必ずローカル時刻で組み立てる
+const parseLocalDate = (str) => {
+  const [y, m, d] = str.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
+// 指定日を含む週の月曜〜日曜を YYYY-MM-DD で返す
+const getWeekRangeStrs = (dateStr) => {
+  const d = parseLocalDate(dateStr);
+  const day = d.getDay();
+  const mon = new Date(d);
+  mon.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  return [getLocalDateString(mon), getLocalDateString(sun)];
+};
+
+// 📌 課題ルールが指定日に「提出対象」かどうかの一元判定
+//   - おやすみ日（excludeDates）に登録された日は対象外
+//   - 削除（アーカイブ）された課題は、削除日以降は対象外（過去の記録・集計は保持）
+const isTaskDueOn = (task, dateStr) => {
+  if ((task.excludeDates || []).includes(dateStr)) return false;
+  if (task.archived && (!task.archivedAt || dateStr >= task.archivedAt)) return false;
+  const day = parseLocalDate(dateStr).getDay();
+  if (task.type === '毎日（平日）') return day >= 1 && day <= 5;
+  if (task.type === '曜日固定') return task.value === DAY_NAMES[day];
+  if (task.type === '日付指定') return task.value === dateStr;
+  if (task.type === '週回数') return true;
+  return false;
+};
+
 // ==========================================
 // 🛠 カスタムフック: セキュアなローカルストレージ
 // ==========================================
@@ -87,15 +119,18 @@ const useLocalStorage = (key, initialValue) => {
     }
   });
 
+  // 関数型更新で常に最新値を参照する（同一レンダー内の連続更新でもデータが失われない）
   const setValue = useCallback((value) => {
-    try {
-      const valueToStore = value instanceof Function ? value(storedValue) : value;
-      setStoredValue(valueToStore);
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
-    } catch (error) {
-      console.error(`Error setting localStorage key "${key}":`, error);
-    }
-  }, [key, storedValue]);
+    setStoredValue(prev => {
+      const valueToStore = value instanceof Function ? value(prev) : value;
+      try {
+        window.localStorage.setItem(key, JSON.stringify(valueToStore));
+      } catch (error) {
+        console.error(`Error setting localStorage key "${key}":`, error);
+      }
+      return valueToStore;
+    });
+  }, [key]);
 
   return [storedValue, setValue];
 };
@@ -103,55 +138,49 @@ const useLocalStorage = (key, initialValue) => {
 // ==========================================
 // 📊 コアビジネスロジック (レポート計算エンジン)
 // ==========================================
+// 削除（アーカイブ）済みの課題も含めて集計する。削除後の日付は必要回数に数えないため、
+// 「その課題が有効だった期間の必要回数」に対する提出率が正しく計算される。
 const generateReportData = (startDate, endDate, students, tasks, logs) => {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  start.setHours(0,0,0,0);
-  end.setHours(23,59,59,999);
-  
   const taskRequirements = {};
-  tasks.forEach(t => taskRequirements[t.name] = 0);
-  
-  let currentDate = new Date(start);
-  const weeks = new Set(); 
+  // 課題ごとの「対象週」（週回数タイプ用）: その週に1日でも有効日があればカウント
+  const taskActiveWeeks = {};
+  tasks.forEach(t => { taskRequirements[t.name] = 0; taskActiveWeeks[t.name] = new Set(); });
+
+  const currentDate = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
 
   while (currentDate <= end) {
-    const day = currentDate.getDay();
-    const isWeekday = day >= 1 && day <= 5;
     const dateStr = getLocalDateString(currentDate);
-    const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
-    const dayStr = dayNames[day];
-    
-    const diffToMon = currentDate.getDate() - day + (day === 0 ? -6 : 1);
-    const mon = new Date(currentDate);
-    mon.setDate(diffToMon);
-    weeks.add(getLocalDateString(mon));
+    const [monStr] = getWeekRangeStrs(dateStr);
 
     tasks.forEach(t => {
-      if (t.type === '毎日（平日）' && isWeekday) taskRequirements[t.name]++;
-      if (t.type === '曜日固定' && t.value === dayStr) taskRequirements[t.name]++;
-      if (t.type === '日付指定' && t.value === dateStr) taskRequirements[t.name]++;
+      if (!isTaskDueOn(t, dateStr)) return;
+      if (t.type === '週回数') {
+        taskActiveWeeks[t.name].add(monStr);
+      } else {
+        taskRequirements[t.name]++;
+      }
     });
-    
+
     currentDate.setDate(currentDate.getDate() + 1);
   }
 
   tasks.forEach(t => {
     if (t.type === '週回数') {
-      taskRequirements[t.name] += weeks.size * parseInt(t.value || 1, 10);
+      taskRequirements[t.name] += taskActiveWeeks[t.name].size * parseInt(t.value || 1, 10);
     }
   });
 
   return students.map(student => {
     const studentLogs = logs.filter(l => l.studentId === student.id && l.date >= startDate && l.date <= endDate);
-    
+
     const taskStats = tasks.map(t => {
       const required = taskRequirements[t.name] || 0;
       const submitted = studentLogs.filter(l => l.taskName === t.name).length;
       const unsubmitted = Math.max(0, required - submitted);
       const rate = required > 0 ? Math.round((submitted / required) * 100) : 0;
-      return { name: t.name, required, submitted, unsubmitted, rate };
-    });
+      return { name: t.name, required, submitted, unsubmitted, rate, archived: !!t.archived };
+    }).filter(t => !t.archived || t.required > 0 || t.submitted > 0);
     
     const feelings = { 'げんき':0, 'ねむい':0, 'イライラ':0, 'かなしい':0 };
     studentLogs.forEach(l => {
@@ -165,6 +194,16 @@ const generateReportData = (startDate, endDate, students, tasks, logs) => {
 // ==========================================
 // 🧩 汎用UIコンポーネント
 // ==========================================
+// 📅 入力欄のどこをタップしてもカレンダーが開く日付入力
+const DateInput = ({ className, ...props }) => (
+  <input
+    type="date"
+    onClick={(e) => { try { e.currentTarget.showPicker?.(); } catch { /* フォーカス外などで開けない場合は標準動作に任せる */ } }}
+    className={`cursor-pointer ${className || ''}`}
+    {...props}
+  />
+);
+
 const RubyText = ({ text, kana }) => (
   <ruby className="ruby-position-over">
     {text}<rt className="text-[0.6em] text-slate-500 font-bold tracking-tight">{kana}</rt>
@@ -246,7 +285,10 @@ const PrintReport = ({ data, period }) => {
               <tbody>
                 {report.taskStats.map(t => (
                   <tr key={t.name}>
-                    <td className="border border-slate-400 p-3 font-bold">{t.name}</td>
+                    <td className="border border-slate-400 p-3 font-bold">
+                      {t.name}
+                      {t.archived && <span className="ml-2 text-xs font-normal text-slate-500">（終了した課題）</span>}
+                    </td>
                     <td className="border border-slate-400 p-3 text-center">{t.required}</td>
                     <td className="border border-slate-400 p-3 text-center">{t.submitted}</td>
                     <td className={`border border-slate-400 p-3 text-center font-bold text-lg ${t.unsubmitted > 0 ? 'text-red-600' : ''}`}>
@@ -423,7 +465,8 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [newStudent, setNewStudent] = useState({ id: '', name: '' });
   const [bulkStudents, setBulkStudents] = useState('');
-  const [newTask, setNewTask] = useState({ type: '毎日（平日）', value: '', name: '' });
+  // デフォルトは「日付指定」＋今日の日付（そのまま単発課題をすぐ登録できる）
+  const [newTask, setNewTask] = useState(() => ({ type: '日付指定', value: getLocalDateString(), name: '' }));
   const [newPin, setNewPin] = useState('');
   const fileInputRef = useRef(null);
 
@@ -433,6 +476,11 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
   
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [editTaskData, setEditTaskData] = useState({ name: '' });
+
+  // 🌟 おやすみ日（提出不要日）編集用ステート
+  const [excludeEditTaskId, setExcludeEditTaskId] = useState(null);
+  const [excludeDateInput, setExcludeDateInput] = useState(() => getLocalDateString());
+  const [showArchivedTasks, setShowArchivedTasks] = useState(false);
 
   // 日付の初期化
   const todayForDash = useMemo(() => new Date(), []);
@@ -451,24 +499,14 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
   const { singleDayData, singleDaySubmitRate, singleDayFeelingCounts, actedStudentsCount, singleDayAttendance } = useMemo(() => {
     if (!isSingleDay) return { singleDayData: [], singleDaySubmitRate: 0, singleDayFeelingCounts: {}, actedStudentsCount: 0, singleDayAttendance: {} };
     
-    const targetDateObj = new Date(dashboardStart);
-    const diffToMon = targetDateObj.getDate() - targetDateObj.getDay() + (targetDateObj.getDay() === 0 ? -6 : 1);
-    const monday = new Date(targetDateObj); monday.setDate(diffToMon); monday.setHours(0,0,0,0);
-    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6); sunday.setHours(23,59,59,999);
-    const targetDayNames = ['日', '月', '火', '水', '木', '金', '土'];
-    const targetDayStr = targetDayNames[targetDateObj.getDay()];
-    const isTargetWeekday = targetDateObj.getDay() >= 1 && targetDateObj.getDay() <= 5;
+    // 手動記録は timestamp が記録操作時刻になるため、週回数の集計は date（対象日）で行う
+    const [monStr, sunStr] = getWeekRangeStrs(dashboardStart);
 
     const data = db.students.map(student => {
       const studentTargetLogs = db.logs.filter(l => l.date === dashboardStart && l.studentId === student.id);
-      const studentWeeklyLogs = db.logs.filter(l => l.studentId === student.id && l.timestamp >= monday.getTime() && l.timestamp <= sunday.getTime());
+      const studentWeeklyLogs = db.logs.filter(l => l.studentId === student.id && l.date >= monStr && l.date <= sunStr);
 
-      const activeTasks = db.tasks.filter(t => {
-        if (t.type === '毎日（平日）' && !isTargetWeekday) return false;
-        if (t.type === '曜日固定' && t.value !== targetDayStr) return false;
-        if (t.type === '日付指定' && t.value !== dashboardStart) return false;
-        return true;
-      }).map(t => {
+      const activeTasks = db.tasks.filter(t => isTaskDueOn(t, dashboardStart)).map(t => {
         const isDone = studentTargetLogs.some(l => l.taskName === t.name);
         let weeklyCount = 0;
         let quotaReached = false;
@@ -548,21 +586,19 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
       showToast(`${studentName} さんはチェックイン済みのため変更できません`, 'error');
       return;
     }
-    const existing = (db.absences || []).find(a => a.date === dashboardStart && a.studentId === studentId);
-    if (existing) {
-      db.setAbsences((db.absences || []).map(a =>
-        (a.date === dashboardStart && a.studentId === studentId) ? { ...a, status, timestamp: Date.now() } : a
-      ));
-    } else {
-      db.setAbsences([...(db.absences || []), {
-        id: Date.now().toString(), date: dashboardStart, studentId, studentName, status, timestamp: Date.now()
-      }]);
-    }
+    db.setAbsences(prev => {
+      const list = prev || [];
+      const existing = list.find(a => a.date === dashboardStart && a.studentId === studentId);
+      if (existing) {
+        return list.map(a => (a.date === dashboardStart && a.studentId === studentId) ? { ...a, status, timestamp: Date.now() } : a);
+      }
+      return [...list, { id: Date.now().toString(), date: dashboardStart, studentId, studentName, status, timestamp: Date.now() }];
+    });
     showToast(`${studentName} さんを「${status}」に記録しました`);
   }, [db, dashboardStart, showToast]);
 
   const handleClearAbsence = useCallback((studentId, studentName) => {
-    db.setAbsences((db.absences || []).filter(a => !(a.date === dashboardStart && a.studentId === studentId)));
+    db.setAbsences(prev => (prev || []).filter(a => !(a.date === dashboardStart && a.studentId === studentId)));
     showToast(`${studentName} さんの出欠記録を取り消しました`);
   }, [db, dashboardStart, showToast]);
 
@@ -582,13 +618,13 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
       timestamp: Date.now(),
       isManual: true
     };
-    db.setLogs([...db.logs, newLog]);
+    db.setLogs(prev => [...prev, newLog]);
     showToast(`「${taskName}」を提出済みに記録しました`);
   }, [db, showToast]);
 
   const handleRemoveSubmission = useCallback((studentId, taskName, dateStr) => {
     if (!window.confirm(`「${taskName}」の提出記録を取り消しますか？`)) return;
-    db.setLogs(db.logs.filter(l => !(l.date === dateStr && l.studentId === studentId && l.taskName === taskName)));
+    db.setLogs(prev => prev.filter(l => !(l.date === dateStr && l.studentId === studentId && l.taskName === taskName)));
     showToast(`「${taskName}」の提出記録を取り消しました`);
   }, [db, showToast]);
 
@@ -685,12 +721,22 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
 
   const handleAddTask = (e) => {
     e.preventDefault();
-    if (!newTask.name) return showToast('課題名を入力してください', 'error');
-    if (newTask.type === '曜日固定' && !newTask.value) newTask.value = '月';
-    if (newTask.type === '週回数' && !newTask.value) newTask.value = '1';
-    
-    db.setTasks([...db.tasks, { id: Date.now().toString(), ...newTask }]);
-    setNewTask({ type: '毎日（平日）', value: '', name: '' });
+    const name = newTask.name.trim();
+    if (!name) return showToast('課題名を入力してください', 'error');
+
+    // 提出記録は課題名で紐づくため、同名課題の重複は集計が壊れる原因になる
+    const existing = db.tasks.find(t => t.name === name);
+    if (existing) {
+      return showToast(existing.archived ? '同名の削除済み課題があります。復元してご利用ください' : 'その課題名は既に登録されています', 'error');
+    }
+
+    let value = newTask.value;
+    if (newTask.type === '曜日固定' && !value) value = '月';
+    if (newTask.type === '週回数' && !value) value = '1';
+    if (newTask.type === '日付指定' && !value) return showToast('日付を選択してください', 'error');
+
+    db.setTasks(prev => [...prev, { id: Date.now().toString(), type: newTask.type, value, name, excludeDates: [] }]);
+    setNewTask({ type: '日付指定', value: getLocalDateString(), name: '' });
     showToast('課題ルールを追加しました');
   };
 
@@ -703,7 +749,10 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
   const handleUpdateTask = (taskId, oldName) => {
     const newName = editTaskData.name.trim();
     if (!newName) return showToast('課題名を入力してください', 'error');
-    
+    if (newName !== oldName && db.tasks.some(t => t.id !== taskId && t.name === newName)) {
+      return showToast('その課題名は既に使われています', 'error');
+    }
+
     // 課題名の更新
     const updatedTasks = db.tasks.map(t => t.id === taskId ? { ...t, name: newName } : t);
     db.setTasks(updatedTasks);
@@ -716,15 +765,55 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
     showToast('課題ルールを更新しました');
   };
 
+  // 🗄️ 削除＝アーカイブ（提出記録と集計を保持したままルールを終了する）
   const handleDeleteTaskSecure = (id) => {
-    const inputPin = window.prompt('【誤操作防止】\n本当に削除する場合は、先生用PINコードを入力してください。');
+    const inputPin = window.prompt('【誤操作防止】\nこの課題ルールを終了（削除）します。これまでの提出記録と集計はレポートに残ります。\n実行するには、先生用PINコードを入力してください。');
     if (inputPin === null) return;
     if (inputPin === db.config.pin) {
-      db.setTasks(db.tasks.filter(x => x.id !== id));
-      showToast('課題を削除しました');
+      const today = getLocalDateString();
+      db.setTasks(prev => prev.map(t => t.id === id ? { ...t, archived: true, archivedAt: today } : t));
+      showToast('課題を終了しました（これまでの記録はレポートに残ります）');
     } else {
       showToast('PINコードが違うため削除をキャンセルしました', 'error');
     }
+  };
+
+  const handleRestoreTask = (id) => {
+    const target = db.tasks.find(t => t.id === id);
+    if (!target) return;
+    if (db.tasks.some(t => !t.archived && t.name === target.name)) {
+      return showToast('同名の課題が有効になっているため復元できません', 'error');
+    }
+    db.setTasks(prev => prev.map(t => t.id === id ? { ...t, archived: false, archivedAt: null } : t));
+    showToast('課題ルールを復元しました');
+  };
+
+  const handlePermanentDeleteTask = (id) => {
+    const inputPin = window.prompt('【⚠️完全削除】\nこの課題をレポートの集計対象からも完全に取り除きます。（児童の提出記録データ自体は残ります）\n実行するには、先生用PINコードを入力してください。');
+    if (inputPin === null) return;
+    if (inputPin === db.config.pin) {
+      db.setTasks(prev => prev.filter(t => t.id !== id));
+      showToast('課題を完全に削除しました');
+    } else {
+      showToast('PINコードが違うため削除をキャンセルしました', 'error');
+    }
+  };
+
+  // 🌟 おやすみ日（この日は提出不要）の追加・削除
+  const handleAddExcludeDate = (taskId) => {
+    if (!excludeDateInput) return showToast('日付を選択してください', 'error');
+    const target = db.tasks.find(t => t.id === taskId);
+    if (!target) return;
+    if ((target.excludeDates || []).includes(excludeDateInput)) {
+      return showToast('その日はすでにおやすみ日に設定されています', 'error');
+    }
+    db.setTasks(prev => prev.map(t => t.id === taskId ? { ...t, excludeDates: [...(t.excludeDates || []), excludeDateInput].sort() } : t));
+    showToast(`${excludeDateInput} をおやすみ日にしました`);
+  };
+
+  const handleRemoveExcludeDate = (taskId, date) => {
+    db.setTasks(prev => prev.map(t => t.id === taskId ? { ...t, excludeDates: (t.excludeDates || []).filter(d => d !== date) } : t));
+    showToast(`${date} のおやすみ設定を取り消しました`);
   };
 
   const handleChangePin = (e) => {
@@ -738,6 +827,7 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
   const handleExportData = () => {
     const backupData = {
       students: db.students, tasks: db.tasks, logs: db.logs, config: db.config,
+      absences: db.absences || [],
       exportDate: new Date().toISOString()
     };
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData));
@@ -761,6 +851,7 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
         if (window.confirm('⚠️現在のデータはすべて上書きされます。復元を実行しますか？')) {
           db.setStudents(importedData.students); db.setTasks(importedData.tasks);
           db.setLogs(importedData.logs); db.setConfig(importedData.config);
+          db.setAbsences(importedData.absences || []);
           showToast('データを復元しました');
         }
       } catch (error) { showToast('ファイルの読み込みに失敗しました', 'error'); }
@@ -773,7 +864,7 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
     const inputPin = window.prompt('【⚠️警告：データの初期化】\n新年度に向けて「名簿」「課題ルール」「提出記録」をすべて完全に削除します。\n（※実行前に必ず「バックアップを保存」してください）\n\n本当に初期化する場合は、先生用PINコードを入力してください。');
     if (inputPin === null) return;
     if (inputPin === db.config.pin) {
-      db.setStudents([]); db.setTasks([]); db.setLogs([]);
+      db.setStudents([]); db.setTasks([]); db.setLogs([]); db.setAbsences([]);
       showToast('データを初期化し、新年度の準備が完了しました');
     } else {
       showToast('PINコードが違うため初期化をキャンセルしました', 'error');
@@ -826,9 +917,9 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
                   <option value="custom">期間指定</option>
                 </select>
                 <div className="flex items-center gap-2">
-                  <input type="date" value={dashboardStart} onChange={e => {setDashboardStart(e.target.value); setDashboardPreset('custom');}} className="bg-slate-50 border border-slate-200 rounded-xl p-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all" />
+                  <DateInput value={dashboardStart} onChange={e => {setDashboardStart(e.target.value); setDashboardPreset('custom');}} className="bg-slate-50 border border-slate-200 rounded-xl p-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all" />
                   <span className="text-slate-400 font-bold">〜</span>
-                  <input type="date" value={dashboardEnd} onChange={e => {setDashboardEnd(e.target.value); setDashboardPreset('custom');}} className="bg-slate-50 border border-slate-200 rounded-xl p-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all" />
+                  <DateInput value={dashboardEnd} onChange={e => {setDashboardEnd(e.target.value); setDashboardPreset('custom');}} className="bg-slate-50 border border-slate-200 rounded-xl p-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all" />
                 </div>
               </div>
             </div>
@@ -1119,10 +1210,18 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
           <div className="space-y-4 animate-fade-in-up">
             <form onSubmit={handleAddTask} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-3">
               <h3 className="text-sm font-bold text-slate-600">課題ルールの追加</h3>
-              <select value={newTask.type} onChange={e=>setNewTask({...newTask, type: e.target.value})} className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all">
+              <select
+                value={newTask.type}
+                onChange={e => {
+                  const type = e.target.value;
+                  // タイプ切り替え時に適切な初期値をセット（日付指定なら今日の日付）
+                  const value = type === '日付指定' ? getLocalDateString() : type === '曜日固定' ? '月' : type === '週回数' ? '1' : '';
+                  setNewTask({ ...newTask, type, value });
+                }}
+                className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all">
+                <option value="日付指定">日付指定</option>
                 <option value="毎日（平日）">毎日（平日）</option>
                 <option value="曜日固定">曜日固定</option>
-                <option value="日付指定">日付指定</option>
                 <option value="週回数">週の回数指定</option>
               </select>
               
@@ -1132,7 +1231,7 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
                 </select>
               )}
               {newTask.type === '日付指定' && (
-                <input type="date" value={newTask.value} onChange={e=>setNewTask({...newTask, value: e.target.value})} className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 transition-all animate-fade-in-up" />
+                <DateInput value={newTask.value} onChange={e=>setNewTask({...newTask, value: e.target.value})} className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 transition-all animate-fade-in-up" />
               )}
               {newTask.type === '週回数' && (
                 <div className="flex items-center gap-3 animate-fade-in-up">
@@ -1148,49 +1247,117 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
             
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 divide-y divide-slate-100">
               <div className="p-4 bg-slate-50 border-b border-slate-100 font-bold text-slate-700 text-sm">現在のルール</div>
-              {db.tasks.map(t => (
-                <div key={t.id} className="flex justify-between items-center p-4 hover:bg-slate-50 transition-colors">
-                  {editingTaskId === t.id ? (
-                    <div className="flex-1 flex items-center gap-2 mr-2 animate-fade-in-up">
-                      <span className="text-xs font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100 flex-shrink-0">
-                        {t.type} {t.value && `(${t.value})`}
-                      </span>
-                      <input 
-                        type="text" 
-                        value={editTaskData.name} 
-                        onChange={e => setEditTaskData({...editTaskData, name: e.target.value})} 
-                        className="flex-1 bg-white border border-slate-300 rounded-lg p-2 text-sm font-bold focus:outline-none focus:border-red-400 shadow-sm" 
-                        placeholder="課題名"
-                      />
-                      <button onClick={() => handleUpdateTask(t.id, t.name)} className="p-2.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors shadow-sm flex-shrink-0">
-                        <Save size={18} />
-                      </button>
-                      <button onClick={() => setEditingTaskId(null)} className="p-2.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors shadow-sm flex-shrink-0">
-                        <X size={18} />
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <div>
-                        <span className="text-xs font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-md mr-3 border border-indigo-100">
+              {db.tasks.filter(t => !t.archived).map(t => (
+                <div key={t.id} className="p-4 hover:bg-slate-50 transition-colors">
+                  <div className="flex justify-between items-center">
+                    {editingTaskId === t.id ? (
+                      <div className="flex-1 flex items-center gap-2 mr-2 animate-fade-in-up">
+                        <span className="text-xs font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100 flex-shrink-0">
                           {t.type} {t.value && `(${t.value})`}
                         </span>
-                        <span className="font-bold text-slate-700">{t.name}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => startEditTask(t)} className="text-slate-400 hover:text-indigo-500 transition-all active:scale-90 p-2 rounded-full hover:bg-indigo-50">
-                          <Pencil size={18} />
+                        <input
+                          type="text"
+                          value={editTaskData.name}
+                          onChange={e => setEditTaskData({...editTaskData, name: e.target.value})}
+                          className="flex-1 bg-white border border-slate-300 rounded-lg p-2 text-sm font-bold focus:outline-none focus:border-red-400 shadow-sm"
+                          placeholder="課題名"
+                        />
+                        <button onClick={() => handleUpdateTask(t.id, t.name)} className="p-2.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors shadow-sm flex-shrink-0">
+                          <Save size={18} />
                         </button>
-                        <button onClick={() => handleDeleteTaskSecure(t.id)} className="text-slate-400 hover:text-red-500 transition-all active:scale-90 p-2 rounded-full hover:bg-red-50">
-                          <Trash2 size={18} />
+                        <button onClick={() => setEditingTaskId(null)} className="p-2.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors shadow-sm flex-shrink-0">
+                          <X size={18} />
                         </button>
                       </div>
-                    </>
+                    ) : (
+                      <>
+                        <div>
+                          <span className="text-xs font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-md mr-3 border border-indigo-100">
+                            {t.type} {t.value && `(${t.value})`}
+                          </span>
+                          <span className="font-bold text-slate-700">{t.name}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => { setExcludeEditTaskId(excludeEditTaskId === t.id ? null : t.id); setExcludeDateInput(getLocalDateString()); }}
+                            title="おやすみ日（この日は提出不要）を設定"
+                            className={`transition-all active:scale-90 p-2 rounded-full ${excludeEditTaskId === t.id ? 'text-amber-500 bg-amber-50' : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50'}`}>
+                            <CalendarOff size={18} />
+                          </button>
+                          <button onClick={() => startEditTask(t)} className="text-slate-400 hover:text-indigo-500 transition-all active:scale-90 p-2 rounded-full hover:bg-indigo-50">
+                            <Pencil size={18} />
+                          </button>
+                          <button onClick={() => handleDeleteTaskSecure(t.id)} className="text-slate-400 hover:text-red-500 transition-all active:scale-90 p-2 rounded-full hover:bg-red-50">
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* 🌟 おやすみ日の一覧チップ */}
+                  {(t.excludeDates || []).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-3">
+                      {(t.excludeDates || []).map(d => (
+                        <span key={d} className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-xs font-bold">
+                          <CalendarOff size={12} /> {d}
+                          <button onClick={() => handleRemoveExcludeDate(t.id, d)} title="おやすみ設定を取り消す" className="ml-0.5 text-amber-400 hover:text-red-500 transition-colors">
+                            <X size={12} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 🌟 おやすみ日の追加エディタ */}
+                  {excludeEditTaskId === t.id && (
+                    <div className="mt-3 p-3 bg-amber-50/60 border border-amber-200 rounded-xl animate-fade-in-up">
+                      <p className="text-xs text-amber-700 font-bold mb-2">「今日だけ宿題なし」など、提出しなくてよい日を追加できます。（必要回数にも数えられません）</p>
+                      <div className="flex items-center gap-2">
+                        <DateInput value={excludeDateInput} onChange={e => setExcludeDateInput(e.target.value)} className="bg-white border border-amber-200 rounded-xl p-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all" />
+                        <button onClick={() => handleAddExcludeDate(t.id)} className="px-4 py-2 bg-amber-500 text-white rounded-xl text-sm font-bold hover:bg-amber-400 transition-all active:scale-95 shadow-sm flex items-center gap-1.5">
+                          <Plus size={16} /> おやすみ日に追加
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
               ))}
-              {db.tasks.length === 0 && <div className="p-6 text-center text-slate-400 font-bold">ルールが設定されていません</div>}
+              {db.tasks.filter(t => !t.archived).length === 0 && <div className="p-6 text-center text-slate-400 font-bold">ルールが設定されていません</div>}
             </div>
+
+            {/* 🗄️ 終了（削除）した課題：記録は保持され、レポートに反映される */}
+            {db.tasks.some(t => t.archived) && (
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                <button onClick={() => setShowArchivedTasks(v => !v)} className="w-full p-4 bg-slate-50 font-bold text-slate-500 text-sm flex justify-between items-center hover:bg-slate-100 transition-colors">
+                  <span className="flex items-center gap-2"><Archive size={16} /> 終了した課題（提出記録・集計は保持されています）</span>
+                  <span className="text-xs bg-white px-2 py-1 rounded-lg shadow-sm">{db.tasks.filter(t => t.archived).length}件 {showArchivedTasks ? '▲' : '▼'}</span>
+                </button>
+                {showArchivedTasks && (
+                  <div className="divide-y divide-slate-100 animate-fade-in-up">
+                    {db.tasks.filter(t => t.archived).map(t => (
+                      <div key={t.id} className="flex justify-between items-center p-4">
+                        <div>
+                          <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md mr-3 border border-slate-200">
+                            {t.type} {t.value && `(${t.value})`}
+                          </span>
+                          <span className="font-bold text-slate-500">{t.name}</span>
+                          {t.archivedAt && <span className="ml-2 text-xs text-slate-400">（{t.archivedAt} 終了）</span>}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => handleRestoreTask(t.id)} title="ルールを復元する" className="text-slate-400 hover:text-green-600 transition-all active:scale-90 p-2 rounded-full hover:bg-green-50">
+                            <ArchiveRestore size={18} />
+                          </button>
+                          <button onClick={() => handlePermanentDeleteTask(t.id)} title="レポート集計からも完全に削除する" className="text-slate-400 hover:text-red-500 transition-all active:scale-90 p-2 rounded-full hover:bg-red-50">
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -1205,12 +1372,12 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
               <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
                 <div className="flex-1">
                   <label className="block text-xs font-bold text-slate-500 mb-1">開始日</label>
-                  <input type="date" value={reportStartDate} onChange={e=>setReportStartDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all shadow-sm" />
+                  <DateInput value={reportStartDate} onChange={e=>setReportStartDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all shadow-sm" />
                 </div>
                 <div className="text-slate-400 font-bold mt-5">〜</div>
                 <div className="flex-1">
                   <label className="block text-xs font-bold text-slate-500 mb-1">終了日</label>
-                  <input type="date" value={reportEndDate} onChange={e=>setReportEndDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all shadow-sm" />
+                  <DateInput value={reportEndDate} onChange={e=>setReportEndDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all shadow-sm" />
                 </div>
               </div>
 
@@ -1312,25 +1479,14 @@ export default function App() {
     const student = db.students.find(s => s.id === id);
     if (!student) return showToastMsg('IDがみつかりません', 'error');
     
-    const today = new Date();
-    const todayStr = getLocalDateString(today);
-    const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
-    const todayDayStr = dayNames[today.getDay()];
-    const isWeekday = today.getDay() >= 1 && today.getDay() <= 5;
-    
-    const diffToMon = today.getDate() - today.getDay() + (today.getDay() === 0 ? -6 : 1);
-    const monday = new Date(today); monday.setDate(diffToMon); monday.setHours(0,0,0,0);
-    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6); sunday.setHours(23,59,59,999);
+    const todayStr = getLocalDateString();
+    // 手動記録の timestamp は操作時刻のため、週回数の集計は date（対象日）で行う
+    const [monStr, sunStr] = getWeekRangeStrs(todayStr);
 
     const studentTodayLogs = db.logs.filter(l => l.date === todayStr && l.studentId === student.id);
-    const studentWeeklyLogs = db.logs.filter(l => l.studentId === student.id && l.timestamp >= monday.getTime() && l.timestamp <= sunday.getTime());
+    const studentWeeklyLogs = db.logs.filter(l => l.studentId === student.id && l.date >= monStr && l.date <= sunStr);
 
-    const activeTasks = db.tasks.filter(t => {
-      if (t.type === '毎日（平日）' && !isWeekday) return false;
-      if (t.type === '曜日固定' && t.value !== todayDayStr) return false;
-      if (t.type === '日付指定' && t.value !== todayStr) return false;
-      return true;
-    }).map(t => {
+    const activeTasks = db.tasks.filter(t => isTaskDueOn(t, todayStr)).map(t => {
       const isDone = studentTodayLogs.some(l => l.taskName === t.name);
       let weeklyCount = 0;
       let quotaReached = false;
@@ -1366,7 +1522,7 @@ export default function App() {
       feeling: feeling,
       timestamp: timestamp
     }));
-    db.setLogs([...db.logs, ...newLogs]);
+    db.setLogs(prev => [...prev, ...newLogs]);
     setView('complete');
   }, [selectedTasks, currentStudent, db]);
 
