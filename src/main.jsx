@@ -8,3 +8,12 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <App />
   </React.StrictMode>
 );
+
+// 📲 PWA: Service Worker の登録（本番ビルドのみ）
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}sw.js`)
+      .catch((error) => console.error('Service Worker の登録に失敗しました:', error));
+  });
+}
