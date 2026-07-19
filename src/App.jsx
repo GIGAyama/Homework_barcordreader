@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Mailbox, Settings, Trash2, CheckCircle2, Circle, X, Users, Activity, Plus, Check, HeartPulse, ShieldAlert, Printer, FileText, Smile, Moon, Zap, CloudRain, PartyPopper, Sparkles, GraduationCap, ClipboardList, CalendarRange, Database, Download, Upload, AlertTriangle, RefreshCw, Pencil, Save, UserCheck, UserX, Clock, PlusCircle, MinusCircle, CalendarOff, Archive, ArchiveRestore } from 'lucide-react';
+import { Mailbox, Settings, Trash2, CheckCircle2, Circle, X, Users, Activity, Plus, Check, HeartPulse, ShieldAlert, Printer, FileText, Smile, Moon, Zap, CloudRain, PartyPopper, Sparkles, GraduationCap, ClipboardList, CalendarRange, Database, Download, Upload, AlertTriangle, RefreshCw, Pencil, Save, UserCheck, UserX, Clock, PlusCircle, MinusCircle, CalendarOff, Archive, ArchiveRestore, Cloud, CloudUpload, CloudDownload, Link2, Unlink, Loader2, KeyRound, ExternalLink } from 'lucide-react';
+import { useGoogleDriveSync } from './useGoogleDriveSync';
 
 // ==========================================
 // 🎨 グローバルスタイル設定 (CSS)
@@ -461,7 +462,7 @@ const CompleteView = ({ onFinish }) => {
 // ==========================================
 // 👩‍🏫 先生用：管理画面 (パフォーマンス最適化済)
 // ==========================================
-const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => {
+const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [newStudent, setNewStudent] = useState({ id: '', name: '' });
   const [bulkStudents, setBulkStudents] = useState('');
@@ -469,6 +470,9 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
   const [newTask, setNewTask] = useState(() => ({ type: '日付指定', value: getLocalDateString(), name: '' }));
   const [newPin, setNewPin] = useState('');
   const fileInputRef = useRef(null);
+
+  // ☁️ Googleドライブ同期：クライアントID入力欄
+  const [clientIdInput, setClientIdInput] = useState(drive?.clientId || '');
 
   // 🌟 編集用ステート
   const [editingStudentId, setEditingStudentId] = useState(null);
@@ -1427,6 +1431,116 @@ const AdminView = ({ onClose, showToast, db, onGenerateReport, isPrinting }) => 
               </div>
             </div>
 
+            {/* ☁️ Googleドライブ同期（複数端末でのデータ共有） */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-sky-200 flex flex-col gap-4">
+              <h3 className="text-sm font-bold text-sky-700 flex items-center gap-2"><Cloud size={18} /> 複数端末でのデータ同期（Googleドライブ）</h3>
+              <p className="text-xs text-slate-500 font-bold leading-relaxed">
+                Googleアカウントでログインすると、名簿・課題・提出記録などをGoogleドライブに自動バックアップし、別の端末（PC・iPad・Chromebook）でも同じデータを引き継げます。
+              </p>
+
+              {!drive.clientId ? (
+                // ── クライアントID未設定：セットアップ ──
+                <div className="bg-sky-50/70 border border-sky-200 rounded-xl p-4 flex flex-col gap-3">
+                  <div className="flex items-center gap-2 text-sky-700 font-bold text-sm">
+                    <KeyRound size={16} /> はじめの設定（Google クライアントID）
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Google Cloud Console で作成した「OAuth クライアントID」を貼り付けてください。設定方法は
+                    <a href="https://github.com/GIGAyama/Homework_barcordreader#-複数端末でのデータ同期googleドライブ連携" target="_blank" rel="noopener noreferrer" className="text-sky-600 underline font-bold inline-flex items-center gap-0.5">README <ExternalLink size={11} /></a>
+                    をご覧ください。（この端末にのみ保存され、外部に送信されません）
+                  </p>
+                  <input
+                    type="text"
+                    placeholder="xxxxxxxx.apps.googleusercontent.com"
+                    value={clientIdInput}
+                    onChange={e => setClientIdInput(e.target.value.trim())}
+                    className="bg-white border border-sky-200 rounded-xl p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-sky-400 transition-all"
+                  />
+                  <button
+                    onClick={() => {
+                      if (!clientIdInput || !clientIdInput.includes('.apps.googleusercontent.com')) {
+                        return showToast('正しいクライアントIDを入力してください', 'error');
+                      }
+                      drive.setClientId(clientIdInput);
+                      showToast('クライアントIDを保存しました');
+                    }}
+                    className="bg-sky-600 text-white font-bold py-3 rounded-xl transition-all active:scale-95 hover:bg-sky-500 shadow-sm flex items-center justify-center gap-2">
+                    <Save size={18} /> 保存して有効にする
+                  </button>
+                </div>
+              ) : (
+                // ── クライアントID設定済み：接続・同期の操作 ──
+                <div className="flex flex-col gap-3">
+                  <div className={`flex items-center justify-between gap-2 px-4 py-3 rounded-xl border text-sm font-bold ${drive.connected ? 'bg-green-50 border-green-200 text-green-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                    <span className="flex items-center gap-2">
+                      {drive.syncing ? <Loader2 size={16} className="animate-spin" /> : drive.connected ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+                      {drive.syncing ? '通信中…' : drive.connected ? 'ドライブに接続中' : '未接続'}
+                    </span>
+                    {drive.lastSyncedAt && (
+                      <span className="text-xs font-normal text-slate-400">
+                        最終同期: {new Date(drive.lastSyncedAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </div>
+
+                  {!drive.connected ? (
+                    <button onClick={drive.connect} disabled={drive.syncing} className="bg-sky-600 text-white font-bold py-3 rounded-xl transition-all active:scale-95 hover:bg-sky-500 shadow-sm flex items-center justify-center gap-2 disabled:opacity-60">
+                      <Link2 size={18} /> Googleでログインして接続
+                    </button>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <button onClick={drive.syncNow} disabled={drive.syncing} className="bg-sky-50 text-sky-700 font-bold py-3 rounded-xl border border-sky-200 transition-all active:scale-95 hover:bg-sky-100 shadow-sm flex items-center justify-center gap-2 disabled:opacity-60">
+                        <RefreshCw size={16} /> 今すぐ同期
+                      </button>
+                      <button onClick={drive.backupNow} disabled={drive.syncing} className="bg-indigo-50 text-indigo-700 font-bold py-3 rounded-xl border border-indigo-200 transition-all active:scale-95 hover:bg-indigo-100 shadow-sm flex items-center justify-center gap-2 disabled:opacity-60">
+                        <CloudUpload size={16} /> 保存
+                      </button>
+                      <button onClick={drive.restoreNow} disabled={drive.syncing} className="bg-orange-50 text-orange-700 font-bold py-3 rounded-xl border border-orange-200 transition-all active:scale-95 hover:bg-orange-100 shadow-sm flex items-center justify-center gap-2 disabled:opacity-60">
+                        <CloudDownload size={16} /> 復元
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 自動同期トグル */}
+                  <label className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer">
+                    <span className="text-sm font-bold text-slate-600 flex items-center gap-2">
+                      <RefreshCw size={16} className="text-sky-500" /> 自動同期
+                      <span className="text-xs font-normal text-slate-400">（変更を自動保存・起動時に復元確認）</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={drive.autoSync}
+                      onChange={e => {
+                        drive.setAutoSync(e.target.checked);
+                        showToast(e.target.checked ? '自動同期をONにしました' : '自動同期をOFFにしました');
+                      }}
+                      className="w-11 h-6 appearance-none rounded-full bg-slate-300 checked:bg-sky-500 relative transition-colors cursor-pointer before:content-[''] before:absolute before:top-0.5 before:left-0.5 before:w-5 before:h-5 before:bg-white before:rounded-full before:transition-transform checked:before:translate-x-5"
+                    />
+                  </label>
+
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    {drive.connected && (
+                      <button onClick={drive.disconnect} className="text-xs text-slate-400 hover:text-slate-600 font-bold underline flex items-center gap-1">
+                        <Unlink size={13} /> 接続を解除
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (!window.confirm('クライアントIDの設定を削除します。（同期は使えなくなりますが、端末内のデータは残ります）')) return;
+                        if (drive.connected) drive.disconnect();
+                        drive.setAutoSync(false);
+                        drive.setClientId('');
+                        setClientIdInput('');
+                        showToast('クライアントIDの設定を削除しました');
+                      }}
+                      className="text-xs text-slate-400 hover:text-red-500 font-bold underline ml-auto">
+                      クライアントIDを変更／削除
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-red-200 flex flex-col gap-4 mt-2">
               <h3 className="text-sm font-bold text-red-600 flex items-center gap-2"><AlertTriangle size={18}/> 年度更新（データ初期化）</h3>
               <p className="text-xs text-slate-500 font-bold leading-relaxed">
@@ -1471,9 +1585,21 @@ export default function App() {
   const [config, setConfig] = useLocalStorage('hp_config', { pin: 'admin' });
   const [absences, setAbsences] = useLocalStorage('hp_absences', []);
 
+  // ☁️ Googleドライブ同期の設定（クライアントID・自動同期のON/OFF）
+  const [driveClientId, setDriveClientId] = useLocalStorage('hp_gdrive_client_id', '');
+  const [driveAutoSync, setDriveAutoSync] = useLocalStorage('hp_gdrive_autosync', false);
+
   const db = useMemo(() => ({ students, setStudents, tasks, setTasks, logs, setLogs, config, setConfig, absences, setAbsences }), [students, setStudents, tasks, setTasks, logs, setLogs, config, setConfig, absences, setAbsences]);
-  
+
   const showToastMsg = useCallback((msg, type = 'success') => setToast({ message: msg, type }), []);
+
+  // ☁️ Googleドライブ同期フック（複数端末でのデータ共有）
+  const driveSync = useGoogleDriveSync({ db, clientId: driveClientId, autoSync: driveAutoSync, showToast: showToastMsg });
+  const drive = useMemo(() => ({
+    ...driveSync,
+    clientId: driveClientId, setClientId: setDriveClientId,
+    autoSync: driveAutoSync, setAutoSync: setDriveAutoSync,
+  }), [driveSync, driveClientId, setDriveClientId, driveAutoSync, setDriveAutoSync]);
 
   const handleScan = useCallback((id) => {
     const student = db.students.find(s => s.id === id);
@@ -1562,10 +1688,11 @@ export default function App() {
           {view === 'feeling' && <FeelingView onFeelingSelect={handleFeelingSelect} />}
           {view === 'complete' && <CompleteView onFinish={() => setView('standby')} />}
           {view === 'admin' && (
-            <AdminView 
-              onClose={() => setView('standby')} 
-              showToast={showToastMsg} 
-              db={db} 
+            <AdminView
+              onClose={() => setView('standby')}
+              showToast={showToastMsg}
+              db={db}
+              drive={drive}
               onGenerateReport={(data, period) => { setReportData(data); setReportPeriod(period); }}
               isPrinting={isPrinting}
             />
