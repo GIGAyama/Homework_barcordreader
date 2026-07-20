@@ -4,9 +4,11 @@ import {
   DATA_SCHEMA_VERSION,
   buildBackupData,
   createClassImprovementAction,
+  createFamilyContact,
   createSupportAction,
   migrateData,
   recordClassImprovementOutcome,
+  recordFamilyContactFollowUp,
   recordSupportOutcome,
   submissionMatchesTask,
   upsertDailyCheckIn,
@@ -30,6 +32,7 @@ test('legacy feelings are deduplicated into one daily check-in', () => {
   assert.ok(migrated.logs.every(log => !Object.hasOwn(log, 'feeling')));
   assert.equal(migrated.logs[0].taskId, 'task-1');
   assert.deepEqual(migrated.classActions, []);
+  assert.deepEqual(migrated.familyContacts, []);
 });
 
 test('existing daily check-in takes precedence over legacy log data', () => {
@@ -65,7 +68,7 @@ test('submission matching prefers stable task ids while supporting legacy names'
 test('backup includes every versioned event collection', () => {
   const backup = buildBackupData({
     students: [], tasks: [], logs: [], config: { pin: 'x' }, absences: [],
-    dailyCheckIns: [{ id: 'c' }], forgottenItems: [{ id: 'f' }], supportActions: [{ id: 's' }], classActions: [{ id: 'a' }],
+    dailyCheckIns: [{ id: 'c' }], forgottenItems: [{ id: 'f' }], supportActions: [{ id: 's' }], classActions: [{ id: 'a' }], familyContacts: [{ id: 'p' }],
   }, 123);
 
   assert.equal(backup.schemaVersion, DATA_SCHEMA_VERSION);
@@ -73,7 +76,37 @@ test('backup includes every versioned event collection', () => {
   assert.equal(backup.forgottenItems.length, 1);
   assert.equal(backup.supportActions.length, 1);
   assert.equal(backup.classActions.length, 1);
+  assert.equal(backup.familyContacts.length, 1);
   assert.equal(backup.syncMeta.updatedAt, 123);
+});
+
+test('family contact separates shared facts, private response, agreement and follow-up', () => {
+  const contact = createFamilyContact({
+    student: { id: '1', name: '山田 花子' },
+    date: '2026-07-20',
+    channel: '電話',
+    topic: '学習準備',
+    sharedFacts: '直近2週間で忘れ物が3件あった',
+    familyResponse: '家庭でも前日に確認している',
+    agreement: '学校と家庭で同じチェック表を使う',
+    followUpDate: '2026-08-03',
+    staffName: '担任',
+    timestamp: 100,
+  });
+
+  assert.equal(contact.status, '要フォロー');
+  assert.equal(contact.privacyLevel, '校内限定');
+  assert.equal(contact.sharedFacts, '直近2週間で忘れ物が3件あった');
+  assert.equal(contact.familyResponse, '家庭でも前日に確認している');
+
+  const reviewed = recordFamilyContactFollowUp([contact], contact.id, {
+    followUpNote: '忘れ物が1件に減ったことを確認した',
+    status: '完了',
+    followUpDate: '2026-08-17',
+  });
+  assert.equal(reviewed[0].status, '完了');
+  assert.equal(reviewed[0].followUpDate, '2026-08-03');
+  assert.match(reviewed[0].followUpNote, /1件/);
 });
 
 test('class improvement action keeps evidence, measure and outcome as separate fields', () => {

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Mailbox, Settings, Trash2, CheckCircle2, Circle, X, Users, Activity, Plus, Check, HeartPulse, ShieldAlert, Printer, FileText, Smile, Moon, Zap, CloudRain, PartyPopper, Sparkles, GraduationCap, ClipboardList, CalendarRange, Database, Download, Upload, AlertTriangle, RefreshCw, Pencil, Save, UserCheck, UserX, Clock, PlusCircle, MinusCircle, CalendarOff, Archive, ArchiveRestore, Cloud, CloudUpload, CloudDownload, Link2, Unlink, Loader2, KeyRound, ExternalLink, Backpack, HandHeart } from 'lucide-react';
+import { Mailbox, Settings, Trash2, CheckCircle2, Circle, X, Users, Activity, Plus, Check, HeartPulse, ShieldAlert, Printer, FileText, Smile, Moon, Zap, CloudRain, PartyPopper, Sparkles, GraduationCap, ClipboardList, CalendarRange, Database, Download, Upload, AlertTriangle, RefreshCw, Pencil, Save, UserCheck, UserX, Clock, PlusCircle, MinusCircle, CalendarOff, Archive, ArchiveRestore, Cloud, CloudUpload, CloudDownload, Link2, Unlink, Loader2, KeyRound, ExternalLink, Backpack, HandHeart, MessageSquare } from 'lucide-react';
 import { useGoogleDriveSync } from './useGoogleDriveSync';
 import ForgottenItemsPanel from './ForgottenItemsPanel';
 import StudentSupportPanel from './StudentSupportPanel';
 import ClassInsightsPanel from './ClassInsightsPanel';
+import FamilyEngagementPanel from './FamilyEngagementPanel';
 import { buildStudentReportInsights } from './reportInsights';
 import { shiftDate } from './studentInsights';
 import {
@@ -712,6 +713,10 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
     () => activeClassActions.filter(item => item.reviewDate && item.reviewDate <= todayStrForDash),
     [activeClassActions, todayStrForDash]
   );
+  const dueFamilyContacts = useMemo(
+    () => (db.familyContacts || []).filter(item => item.status !== '完了' && item.followUpDate && item.followUpDate <= todayStrForDash),
+    [db.familyContacts, todayStrForDash]
+  );
 
   // 🚀 【最適化】1日表示用のデータをメモ化
   const { singleDayData, singleDaySubmitRate, singleDayFeelingCounts, actedStudentsCount, singleDayAttendance } = useMemo(() => {
@@ -1072,6 +1077,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
           db.setForgottenItems(migrated.forgottenItems);
           db.setSupportActions(migrated.supportActions);
           db.setClassActions(migrated.classActions);
+          db.setFamilyContacts(migrated.familyContacts);
           db.setSchemaVersion(migrated.schemaVersion);
           showToast('データを復元しました');
         }
@@ -1082,11 +1088,11 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
   };
 
   const handleYearlyReset = () => {
-    const inputPin = window.prompt('【⚠️警告：データの初期化】\n新年度に向けて、名簿・課題・提出・きもち・出欠・忘れ物・児童支援・学級改善の記録をすべて完全に削除します。\n（※実行前に必ず「バックアップを保存」してください）\n\n本当に初期化する場合は、先生用PINコードを入力してください。');
+    const inputPin = window.prompt('【⚠️警告：データの初期化】\n新年度に向けて、名簿・課題・提出・きもち・出欠・忘れ物・児童支援・学級改善・家庭連携の記録をすべて完全に削除します。\n（※実行前に必ず「バックアップを保存」してください）\n\n本当に初期化する場合は、先生用PINコードを入力してください。');
     if (inputPin === null) return;
     if (inputPin === db.config.pin) {
       db.setStudents([]); db.setTasks([]); db.setLogs([]); db.setAbsences([]);
-      db.setDailyCheckIns([]); db.setForgottenItems([]); db.setSupportActions([]); db.setClassActions([]);
+      db.setDailyCheckIns([]); db.setForgottenItems([]); db.setSupportActions([]); db.setClassActions([]); db.setFamilyContacts([]);
       showToast('データを初期化し、新年度の準備が完了しました');
     } else {
       showToast('PINコードが違うため初期化をキャンセルしました', 'error');
@@ -1135,6 +1141,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
           { id: 'class-insights', icon: <Sparkles size={16}/>, label: '学級改善' },
           { id: 'forgotten', icon: <Backpack size={16}/>, label: '忘れ物・準備' },
           { id: 'support', icon: <HandHeart size={16}/>, label: '児童支援' },
+          { id: 'family', icon: <MessageSquare size={16}/>, label: '家庭連携' },
           { id: 'students', icon: <Users size={16}/>, label: '名簿管理' },
           { id: 'tasks', icon: <CheckCircle2 size={16}/>, label: '課題ルール' },
           { id: 'report', icon: <Printer size={16}/>, label: 'レポート印刷' },
@@ -1220,6 +1227,13 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
                 <p className={`text-xs font-bold mt-3 ${dueClassActions.length > 0 ? 'text-amber-200' : 'text-cyan-100'}`}>{dueClassActions.length > 0 ? `振り返り時期 ${dueClassActions.length}件` : 'インサイトを確認 →'}</p>
               </button>
             </div>
+
+            {dueFamilyContacts.length > 0 && (
+              <button type="button" onClick={() => setActiveTab('family')} className="w-full bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-center justify-between gap-4 text-left hover:bg-blue-100 transition-colors">
+                <div className="flex items-center gap-3"><div className="p-2 bg-blue-600 text-white rounded-xl"><MessageSquare size={19} /></div><div><p className="font-bold text-blue-900">家庭連携の確認時期です</p><p className="text-xs text-blue-700 mt-1">確認予定日を迎えた記録が{dueFamilyContacts.length}件あります。</p></div></div>
+                <span className="text-sm font-bold text-blue-700 whitespace-nowrap">確認する →</span>
+              </button>
+            )}
 
             {/* 🗓️ 出欠サマリー（1日表示のみ） */}
             {isSingleDay && db.students.length > 0 && (
@@ -1426,6 +1440,10 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
 
         {activeTab === 'support' && (
           <StudentSupportPanel db={db} showToast={showToast} />
+        )}
+
+        {activeTab === 'family' && (
+          <FamilyEngagementPanel db={db} showToast={showToast} />
         )}
 
         {activeTab === 'students' && (
@@ -1933,6 +1951,7 @@ export default function App() {
   const [forgottenItems, setForgottenItems] = useLocalStorage('hp_forgotten_items', []);
   const [supportActions, setSupportActions] = useLocalStorage('hp_support_actions', []);
   const [classActions, setClassActions] = useLocalStorage('hp_class_actions', []);
+  const [familyContacts, setFamilyContacts] = useLocalStorage('hp_family_contacts', []);
   const [schemaVersion, setSchemaVersion] = useLocalStorage('hp_schema_version', 1);
 
   // ☁️ Googleドライブ同期の設定（クライアントID・自動同期のON/OFF）
@@ -1949,21 +1968,23 @@ export default function App() {
     forgottenItems, setForgottenItems,
     supportActions, setSupportActions,
     classActions, setClassActions,
+    familyContacts, setFamilyContacts,
     schemaVersion, setSchemaVersion,
-  }), [students, setStudents, tasks, setTasks, logs, setLogs, config, setConfig, absences, setAbsences, dailyCheckIns, setDailyCheckIns, forgottenItems, setForgottenItems, supportActions, setSupportActions, classActions, setClassActions, schemaVersion, setSchemaVersion]);
+  }), [students, setStudents, tasks, setTasks, logs, setLogs, config, setConfig, absences, setAbsences, dailyCheckIns, setDailyCheckIns, forgottenItems, setForgottenItems, supportActions, setSupportActions, classActions, setClassActions, familyContacts, setFamilyContacts, schemaVersion, setSchemaVersion]);
 
-  // v1の提出ログ内に重複保存されていた「きもち」を、独立した日次チェックインへ安全に移行する。
+  // 旧形式の各記録を、現在のイベントコレクションへ安全に移行する。
   useEffect(() => {
     if (Number(schemaVersion) >= DATA_SCHEMA_VERSION) return;
-    const migrated = migrateData({ students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions, classActions });
+    const migrated = migrateData({ students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions, classActions, familyContacts });
     setTasks(migrated.tasks);
     setLogs(migrated.logs);
     setDailyCheckIns(migrated.dailyCheckIns);
     setForgottenItems(migrated.forgottenItems);
     setSupportActions(migrated.supportActions);
     setClassActions(migrated.classActions);
+    setFamilyContacts(migrated.familyContacts);
     setSchemaVersion(migrated.schemaVersion);
-  }, [schemaVersion, students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions, classActions, setTasks, setLogs, setDailyCheckIns, setForgottenItems, setSupportActions, setClassActions, setSchemaVersion]);
+  }, [schemaVersion, students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions, classActions, familyContacts, setTasks, setLogs, setDailyCheckIns, setForgottenItems, setSupportActions, setClassActions, setFamilyContacts, setSchemaVersion]);
 
   const showToastMsg = useCallback((msg, type = 'success') => setToast({ message: msg, type }), []);
 
