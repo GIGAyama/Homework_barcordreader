@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Mailbox, Settings, Trash2, CheckCircle2, Circle, X, Users, Activity, Plus, Check, HeartPulse, ShieldAlert, Printer, FileText, Smile, Moon, Zap, CloudRain, PartyPopper, Sparkles, GraduationCap, ClipboardList, CalendarRange, Database, Download, Upload, AlertTriangle, RefreshCw, Pencil, Save, UserCheck, UserX, Clock, PlusCircle, MinusCircle, CalendarOff, Archive, ArchiveRestore, Cloud, CloudUpload, CloudDownload, Link2, Unlink, Loader2, KeyRound, ExternalLink, Backpack, HandHeart, MessageSquare } from 'lucide-react';
 import { useGoogleDriveSync } from './useGoogleDriveSync';
 import ForgottenItemsPanel from './ForgottenItemsPanel';
@@ -6,15 +6,23 @@ import StudentSupportPanel from './StudentSupportPanel';
 import ClassInsightsPanel from './ClassInsightsPanel';
 import FamilyEngagementPanel from './FamilyEngagementPanel';
 import OperationsCenterPanel from './OperationsCenterPanel';
+import SafetySnapshotPanel from './SafetySnapshotPanel';
 import { buildStudentReportInsights } from './reportInsights';
 import { shiftDate } from './studentInsights';
 import { isTaskDueOn } from './taskSchedule';
 import {
+  applyBackupToDb,
+  buildRestorePreview,
+  buildSafeBackupData,
+  formatRestoreConfirmation,
+  validateBackupData,
+} from './dataSafety';
+import { saveSafetySnapshot, shouldCreateAutomaticSnapshot } from './safetySnapshots';
+import { createPinCredential, upgradePlaintextPin, verifyPin } from './pinSecurity';
+import {
   DATA_SCHEMA_VERSION,
-  buildBackupData,
   createDailyCheckIn,
   createSubmissionEvent,
-  isValidBackupData,
   migrateData,
   submissionMatchesTask,
   upsertDailyCheckIn,
@@ -82,6 +90,7 @@ const FEELING_CONFIG = {
   'イライラ': { icon: Zap, colorClass: 'text-rose-500', bgClass: 'bg-rose-50 border-rose-200', hoverClass: 'hover:bg-rose-100' },
   'かなしい': { icon: CloudRain, colorClass: 'text-indigo-500', bgClass: 'bg-indigo-50 border-indigo-200', hoverClass: 'hover:bg-indigo-100' }
 };
+const ADMIN_IDLE_TIMEOUT = 10 * 60 * 1000;
 
 // ⚠️ 【重要】UTC依存のバグを防ぐ、確実なローカル日付(YYYY-MM-DD)取得関数
 const getLocalDateString = (d = new Date()) => {
@@ -130,6 +139,7 @@ const useLocalStorage = (key, initialValue) => {
         window.localStorage.setItem(key, JSON.stringify(valueToStore));
       } catch (error) {
         console.error(`Error setting localStorage key "${key}":`, error);
+        window.dispatchEvent(new CustomEvent('shukudai-post:storage-error', { detail: { key } }));
       }
       return valueToStore;
     });
@@ -295,7 +305,7 @@ const PrintReport = ({ data, period, template = 'term' }) => {
           
           <div className="mb-8 flex justify-between items-end border-b-2 border-slate-800 pb-2">
             <h2 className="text-2xl font-bold">{report.student.name} さん</h2>
-            <p className="text-lg font-bold">確認印: 　　　　　　　　　</p>
+            <p className="text-lg font-bold">確認印: <span className="inline-block w-40" /></p>
           </div>
 
           <div className="mb-10">
@@ -774,14 +784,14 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
     if (isSingleDay) return { multiDayData: [], multiSubmitRate: 0, multiTotalRequired: 0, multiTotalSubmitted: 0, multiFeelingCounts: {} };
     
     const data = generateReportData(dashboardStart, dashboardEnd, db.students, db.tasks, db.logs, db.dailyCheckIns);
-    let rate = 0, req = 0, sub = 0;
+    let req = 0, sub = 0;
     const counts = { 'げんき': 0, 'ねむい': 0, 'イライラ': 0, 'かなしい': 0 };
     
     data.forEach(d => {
       d.taskStats.forEach(t => { req += t.required; sub += t.submitted; });
       Object.keys(counts).forEach(k => { counts[k] += d.feelings[k]; });
     });
-    rate = req > 0 ? Math.round((sub / req) * 100) : 0;
+    const rate = req > 0 ? Math.round((sub / req) * 100) : 0;
 
     return { multiDayData: data, multiSubmitRate: rate, multiTotalRequired: req, multiTotalSubmitted: sub, multiFeelingCounts: counts };
   }, [dashboardStart, dashboardEnd, db.students, db.tasks, db.logs, db.dailyCheckIns, isSingleDay]);
@@ -918,10 +928,10 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
     showToast('児童情報を更新しました');
   };
 
-  const handleDeleteStudentSecure = (id) => {
+  const handleDeleteStudentSecure = async (id) => {
     const inputPin = window.prompt('【誤操作防止】\n本当に削除する場合は、先生用PINコードを入力してください。');
     if (inputPin === null) return;
-    if (inputPin === db.config.pin) {
+    if (await verifyPin(inputPin, db.config)) {
       db.setStudents(db.students.filter(x => x.id !== id));
       showToast('児童を削除しました');
     } else {
@@ -976,10 +986,10 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
   };
 
   // 🗄️ 削除＝アーカイブ（提出記録と集計を保持したままルールを終了する）
-  const handleDeleteTaskSecure = (id) => {
+  const handleDeleteTaskSecure = async (id) => {
     const inputPin = window.prompt('【誤操作防止】\nこの課題ルールを終了（削除）します。これまでの提出記録と集計はレポートに残ります。\n実行するには、先生用PINコードを入力してください。');
     if (inputPin === null) return;
-    if (inputPin === db.config.pin) {
+    if (await verifyPin(inputPin, db.config)) {
       const today = getLocalDateString();
       db.setTasks(prev => prev.map(t => t.id === id ? { ...t, archived: true, archivedAt: today } : t));
       showToast('課題を終了しました（これまでの記録はレポートに残ります）');
@@ -998,10 +1008,10 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
     showToast('課題ルールを復元しました');
   };
 
-  const handlePermanentDeleteTask = (id) => {
+  const handlePermanentDeleteTask = async (id) => {
     const inputPin = window.prompt('【⚠️完全削除】\nこの課題をレポートの集計対象からも完全に取り除きます。（児童の提出記録データ自体は残ります）\n実行するには、先生用PINコードを入力してください。');
     if (inputPin === null) return;
-    if (inputPin === db.config.pin) {
+    if (await verifyPin(inputPin, db.config)) {
       db.setTasks(prev => prev.filter(t => t.id !== id));
       showToast('課題を完全に削除しました');
     } else {
@@ -1026,16 +1036,22 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
     showToast(`${date} のおやすみ設定を取り消しました`);
   };
 
-  const handleChangePin = (e) => {
+  const handleChangePin = async (e) => {
     e.preventDefault();
-    if (newPin.length < 4) return showToast('PINは4文字以上で設定してください', 'error');
-    db.setConfig({ ...db.config, pin: newPin });
-    setNewPin('');
-    showToast('PINコードを変更しました');
+    if (newPin.length < 6) return showToast('PINは英数字6文字以上で設定してください', 'error');
+    try {
+      const credential = await createPinCredential(newPin);
+      const { pin: _legacyPin, ...safeConfig } = db.config;
+      db.setConfig({ ...safeConfig, ...credential });
+      setNewPin('');
+      showToast('PINコードを安全な形式で保存しました');
+    } catch (error) {
+      showToast(error?.message || 'PINコードを保存できませんでした', 'error');
+    }
   };
 
   const handleExportData = () => {
-    const backupData = buildBackupData(db);
+    const backupData = buildSafeBackupData(db);
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData));
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute("href", dataStr);
@@ -1053,30 +1069,31 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
     reader.onload = (event) => {
       try {
         const importedData = JSON.parse(event.target.result);
-        if (!isValidBackupData(importedData)) throw new Error('不正なファイル形式です');
-        if (window.confirm('⚠️現在のデータはすべて上書きされます。復元を実行しますか？')) {
-          const migrated = migrateData(importedData);
-          db.setStudents(migrated.students); db.setTasks(migrated.tasks);
-          db.setLogs(migrated.logs); db.setConfig(migrated.config);
-          db.setAbsences(migrated.absences);
-          db.setDailyCheckIns(migrated.dailyCheckIns);
-          db.setForgottenItems(migrated.forgottenItems);
-          db.setSupportActions(migrated.supportActions);
-          db.setClassActions(migrated.classActions);
-          db.setFamilyContacts(migrated.familyContacts);
-          db.setSchemaVersion(migrated.schemaVersion);
+        const validation = validateBackupData(importedData);
+        if (!validation.valid) throw new Error(validation.errors.join('、'));
+        const preview = buildRestorePreview(db, importedData);
+        const warning = validation.warnings.length ? `\n\n確認事項:\n- ${validation.warnings.join('\n- ')}` : '';
+        if (window.confirm(`${formatRestoreConfirmation(preview, '選択したファイル')}${warning}`)) {
+          saveSafetySnapshot(db, { reason: 'ファイル復元前' });
+          applyBackupToDb(db, importedData);
           showToast('データを復元しました');
         }
-      } catch (error) { showToast('ファイルの読み込みに失敗しました', 'error'); }
+      } catch (error) { showToast(`ファイルを復元できません：${error?.message || '読み込みエラー'}`, 'error'); }
       e.target.value = null;
     };
     reader.readAsText(file);
   };
 
-  const handleYearlyReset = () => {
+  const handleYearlyReset = async () => {
     const inputPin = window.prompt('【⚠️警告：データの初期化】\n新年度に向けて、名簿・課題・提出・きもち・出欠・忘れ物・児童支援・学級改善・家庭連携の記録をすべて完全に削除します。\n（※実行前に必ず「バックアップを保存」してください）\n\n本当に初期化する場合は、先生用PINコードを入力してください。');
     if (inputPin === null) return;
-    if (inputPin === db.config.pin) {
+    if (await verifyPin(inputPin, db.config)) {
+      try {
+        saveSafetySnapshot(db, { reason: '年度更新前' });
+      } catch (error) {
+        showToast(`初期化を中止しました：${error?.message || '復元ポイントを保存できません'}`, 'error');
+        return;
+      }
       db.setStudents([]); db.setTasks([]); db.setLogs([]); db.setAbsences([]);
       db.setDailyCheckIns([]); db.setForgottenItems([]); db.setSupportActions([]); db.setClassActions([]); db.setFamilyContacts([]);
       showToast('データを初期化し、新年度の準備が完了しました');
@@ -1754,10 +1771,10 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
           <div className="space-y-4 animate-fade-in-up">
             <form onSubmit={handleChangePin} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-3">
               <h3 className="text-sm font-bold text-red-500">セキュリティ設定</h3>
-              <p className="text-xs text-slate-500 font-bold mb-2">先生用メニューを開くためのPINコード（暗証番号）を変更します。</p>
+              <p className="text-xs text-slate-500 font-bold mb-2">先生用メニューを開くためのPINコードを変更します。PINは端末内・バックアップとも復元できないハッシュ形式で保存されます。</p>
               <input 
                 type="password" 
-                placeholder="新しいPINコード (英数字4文字以上)" 
+                placeholder="新しいPINコード (英数字6文字以上)"
                 value={newPin} 
                 onChange={e => {
                   const val = e.target.value.replace(/[Ａ-Ｚａ-ｚ０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/[^a-zA-Z0-9]/g, '');
@@ -1783,6 +1800,8 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
                 </button>
               </div>
             </div>
+
+            <SafetySnapshotPanel db={db} showToast={showToast} />
 
             {/* ☁️ Googleドライブ同期（複数端末でのデータ共有） */}
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-sky-200 flex flex-col gap-4">
@@ -1835,6 +1854,30 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
                       </span>
                     )}
                   </div>
+
+                  {drive.conflict && (
+                    <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4 space-y-3">
+                      <div>
+                        <h4 className="text-sm font-bold text-amber-800 flex items-center gap-2"><AlertTriangle size={17} /> 同期の競合を検出しました</h4>
+                        <p className="text-xs text-amber-700 mt-1 leading-relaxed">この端末とGoogleドライブの両方に更新があります。自動上書きは停止しています。残したい方を選んでください。選ばなかった版も復元ポイントへ退避します。</p>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {drive.conflict.preview.changes.filter(item => item.current !== item.next).slice(0, 6).map(item => (
+                          <span key={item.key} className="text-[11px] font-bold rounded-full border border-amber-200 bg-white px-2.5 py-1 text-amber-800">{item.label} 端末{item.current}／クラウド{item.next}</span>
+                        ))}
+                        {drive.conflict.preview.changes.every(item => item.current === item.next) && <span className="text-[11px] text-amber-700">件数は同じですが、内容または更新履歴が異なります。</span>}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <button type="button" disabled={drive.syncing} onClick={() => {
+                          if (window.confirm('Googleドライブ版を採用しますか？現在の端末データは復元ポイントへ保存されます。')) drive.resolveConflict('remote');
+                        }} className="bg-white text-sky-700 border border-sky-200 rounded-xl py-3 text-sm font-bold hover:bg-sky-50 disabled:opacity-60"><CloudDownload size={16} className="inline mr-1" /> クラウド版を採用</button>
+                        <button type="button" disabled={drive.syncing} onClick={() => {
+                          if (window.confirm('この端末版を採用し、Googleドライブを更新しますか？現在のクラウド版は復元ポイントへ保存されます。')) drive.resolveConflict('local');
+                        }} className="bg-slate-900 text-white rounded-xl py-3 text-sm font-bold hover:bg-slate-700 disabled:opacity-60"><CloudUpload size={16} className="inline mr-1" /> この端末版を採用</button>
+                      </div>
+                      <button type="button" onClick={drive.dismissConflict} className="text-xs font-bold text-amber-700 underline">今は選ばない</button>
+                    </div>
+                  )}
 
                   {!drive.connected ? (
                     <button onClick={drive.connect} disabled={drive.syncing} className="bg-sky-600 text-white font-bold py-3 rounded-xl transition-all active:scale-95 hover:bg-sky-500 shadow-sm flex items-center justify-center gap-2 disabled:opacity-60">
@@ -1898,7 +1941,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
               <h3 className="text-sm font-bold text-red-600 flex items-center gap-2"><AlertTriangle size={18}/> 年度更新（データ初期化）</h3>
               <p className="text-xs text-slate-500 font-bold leading-relaxed">
                 新年度に向けて、現在の「名簿」「課題ルール」「提出記録」をすべて削除し、初期状態に戻します。（PINコードの設定のみ保持されます）<br/>
-                <span className="text-red-500 mt-1 inline-block">※この操作は取り消せません。実行前に必ず上記の「バックアップを保存」を行ってください。</span>
+                <span className="text-red-500 mt-1 inline-block">※実行直前の状態は「自動復元ポイント」へ退避します。端末故障に備えてファイルバックアップも保存してください。</span>
               </p>
               <button onClick={handleYearlyReset} className="w-full bg-red-50 text-red-700 font-bold py-3.5 rounded-xl border border-red-200 transition-all active:scale-95 flex items-center justify-center gap-2 hover:bg-red-100 shadow-sm">
                 <RefreshCw size={18} /> 全データを消去して新年度を迎える
@@ -1977,7 +2020,36 @@ export default function App() {
     setSchemaVersion(migrated.schemaVersion);
   }, [schemaVersion, students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions, classActions, familyContacts, setTasks, setLogs, setDailyCheckIns, setForgottenItems, setSupportActions, setClassActions, setFamilyContacts, setSchemaVersion]);
 
+  // 旧バージョンの平文PINを、初回起動時にPBKDF2ハッシュへ無停止で移行する。
+  useEffect(() => {
+    if (config.pinHash || typeof config.pin !== 'string') return undefined;
+    let cancelled = false;
+    upgradePlaintextPin(config)
+      .then(upgraded => { if (!cancelled) setConfig(upgraded); })
+      .catch(error => console.error('PINの安全な形式への移行に失敗しました', error));
+    return () => { cancelled = true; };
+  }, [config, setConfig]);
+
   const showToastMsg = useCallback((msg, type = 'success') => setToast({ message: msg, type }), []);
+
+  useEffect(() => {
+    const handleStorageError = () => showToastMsg('端末への保存に失敗しました。空き容量を確認し、バックアップを保存してください', 'error');
+    window.addEventListener('shukudai-post:storage-error', handleStorageError);
+    return () => window.removeEventListener('shukudai-post:storage-error', handleStorageError);
+  }, [showToastMsg]);
+
+  // 変更が続く間も30分ごとに整合性付きの復元ポイントを残す。
+  useEffect(() => {
+    if (!shouldCreateAutomaticSnapshot()) return undefined;
+    const timer = window.setTimeout(() => {
+      try {
+        saveSafetySnapshot(db, { reason: '定期自動保存', automatic: true });
+      } catch (error) {
+        showToastMsg(error?.message || '自動復元ポイントを保存できませんでした', 'error');
+      }
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions, classActions, familyContacts, schemaVersion, db, showToastMsg]);
 
   // ☁️ Googleドライブ同期フック（複数端末でのデータ共有）
   const driveSync = useGoogleDriveSync({ db, clientId: driveClientId, autoSync: driveAutoSync, showToast: showToastMsg });
@@ -2041,16 +2113,38 @@ export default function App() {
     setView('complete');
   }, [selectedTasks, currentStudent, db]);
 
-  const handleAdminLogin = useCallback((e) => {
+  const handleAdminLogin = useCallback(async (e) => {
     e.preventDefault();
-    if (authPin === db.config.pin) {
-      setShowAuthModal(false);
-      setAuthPin('');
-      setView('admin');
-    } else {
-      showToastMsg('PINコードが違います', 'error');
+    try {
+      if (await verifyPin(authPin, db.config)) {
+        setShowAuthModal(false);
+        setAuthPin('');
+        setView('admin');
+      } else {
+        showToastMsg('PINコードが違います', 'error');
+      }
+    } catch (error) {
+      showToastMsg(error?.message || 'PINを確認できませんでした', 'error');
     }
-  }, [authPin, db.config.pin, showToastMsg]);
+  }, [authPin, db.config, showToastMsg]);
+
+  useEffect(() => {
+    if (view !== 'admin') return undefined;
+    let timer;
+    const resetTimer = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        setView('standby');
+        showToastMsg('安全のため、操作がなかった先生用画面をロックしました');
+      }, ADMIN_IDLE_TIMEOUT);
+    };
+    ['pointerdown', 'keydown', 'touchstart'].forEach(event => window.addEventListener(event, resetTimer, { passive: true }));
+    resetTimer();
+    return () => {
+      window.clearTimeout(timer);
+      ['pointerdown', 'keydown', 'touchstart'].forEach(event => window.removeEventListener(event, resetTimer));
+    };
+  }, [view, showToastMsg]);
 
   // 🖨️ 印刷モードの検知（CSSの不具合防止）
   useEffect(() => {

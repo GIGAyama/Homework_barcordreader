@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   CalendarCheck,
   CheckCircle2,
@@ -11,7 +11,6 @@ import {
   ShieldAlert,
   Sparkles,
   Trash2,
-  UserRoundSearch,
   Users,
 } from 'lucide-react';
 import { createFamilyContact, recordFamilyContactFollowUp } from './dataModel';
@@ -58,7 +57,7 @@ export default function FamilyEngagementPanel({ db, showToast }) {
   }, [db.students, selectedStudentId]);
 
   const selectedStudent = db.students.find(student => student.id === selectedStudentId) || null;
-  const contacts = db.familyContacts || [];
+  const contacts = useMemo(() => db.familyContacts || [], [db.familyContacts]);
   const dueContacts = useMemo(() => contacts
     .filter(item => item.status !== '完了' && item.followUpDate && item.followUpDate <= today)
     .sort((a, b) => a.followUpDate.localeCompare(b.followUpDate)), [contacts, today]);
