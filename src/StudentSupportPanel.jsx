@@ -10,6 +10,7 @@ import {
   HandHeart,
   HeartPulse,
   Lightbulb,
+  MessageSquare,
   Plus,
   Sparkles,
   Target,
@@ -37,6 +38,7 @@ const timelineConfig = {
   'forgotten-item': { Icon: Backpack, color: 'text-red-500', bg: 'bg-red-50 border-red-100' },
   'attendance': { Icon: Clock3, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-100' },
   'support': { Icon: HandHeart, color: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-100' },
+  'family-contact': { Icon: MessageSquare, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-100' },
 };
 
 const formatDate = dateString => {
@@ -115,7 +117,8 @@ export default function StudentSupportPanel({ db, showToast }) {
     forgottenItems: db.forgottenItems,
     absences: db.absences,
     supportActions: db.supportActions,
-  }) : [], [selectedStudent, db.logs, db.tasks, db.dailyCheckIns, db.forgottenItems, db.absences, db.supportActions]);
+    familyContacts: db.familyContacts,
+  }) : [], [selectedStudent, db.logs, db.tasks, db.dailyCheckIns, db.forgottenItems, db.absences, db.supportActions, db.familyContacts]);
 
   const updateForm = patch => setForm(previous => ({ ...previous, ...patch }));
 
@@ -350,7 +353,7 @@ export default function StudentSupportPanel({ db, showToast }) {
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
               <div className="p-4 bg-slate-50 border-b border-slate-100">
                 <h5 className="font-bold text-slate-700 flex items-center gap-2"><FileClock size={18} /> 児童タイムライン</h5>
-                <p className="text-xs text-slate-400 mt-1">提出・きもち・忘れ物・出欠・支援を日付順に表示</p>
+                <p className="text-xs text-slate-400 mt-1">提出・きもち・忘れ物・出欠・支援・家庭連携を日付順に表示</p>
               </div>
               <TimelineList events={timeline} />
             </div>

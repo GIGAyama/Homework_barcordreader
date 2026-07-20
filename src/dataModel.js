@@ -1,4 +1,4 @@
-export const DATA_SCHEMA_VERSION = 4;
+export const DATA_SCHEMA_VERSION = 5;
 
 const randomPart = () => {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -141,6 +141,47 @@ export const recordClassImprovementOutcome = (classActions, id, { result, outcom
     updatedAt: Date.now(),
   } : item);
 
+export const createFamilyContact = ({
+  student,
+  date,
+  channel,
+  topic,
+  sharedFacts,
+  familyResponse,
+  agreement,
+  followUpDate = '',
+  staffName = '',
+  timestamp = Date.now(),
+}) => ({
+  id: createEventId('family-contact'),
+  eventType: 'family-contact',
+  date,
+  studentId: student.id,
+  studentName: student.name,
+  channel,
+  topic,
+  sharedFacts: sharedFacts.trim(),
+  familyResponse: familyResponse.trim(),
+  agreement: agreement.trim(),
+  followUpDate,
+  staffName: staffName.trim(),
+  status: followUpDate ? '要フォロー' : '完了',
+  followUpNote: '',
+  privacyLevel: '校内限定',
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+
+export const recordFamilyContactFollowUp = (familyContacts, id, { followUpNote, status, followUpDate }) =>
+  (familyContacts || []).map(item => item.id === id ? {
+    ...item,
+    followUpNote: followUpNote.trim(),
+    status,
+    followUpDate: status === '完了' ? item.followUpDate : followUpDate,
+    completedAt: status === '完了' ? Date.now() : null,
+    updatedAt: Date.now(),
+  } : item);
+
 const normalizeTasks = (tasks = []) => tasks.map((task, index) => ({
   ...task,
   id: String(task.id || `legacy-task-${index + 1}`),
@@ -215,6 +256,13 @@ export const migrateData = (source = {}) => {
       ...item,
       eventType: 'class-improvement-action',
     })),
+    familyContacts: (source.familyContacts || []).map(item => ({
+      status: item.followUpDate ? '要フォロー' : '完了',
+      followUpNote: '',
+      privacyLevel: '校内限定',
+      ...item,
+      eventType: 'family-contact',
+    })),
   };
 };
 
@@ -229,6 +277,7 @@ export const buildBackupData = (db, updatedAt = Date.now()) => ({
   forgottenItems: db.forgottenItems || [],
   supportActions: db.supportActions || [],
   classActions: db.classActions || [],
+  familyContacts: db.familyContacts || [],
   exportDate: new Date().toISOString(),
   syncMeta: { app: 'shukudai-post', version: DATA_SCHEMA_VERSION, updatedAt },
 });

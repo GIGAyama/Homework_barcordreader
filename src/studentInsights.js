@@ -116,6 +116,7 @@ export const buildStudentTimeline = ({
   forgottenItems = [],
   absences = [],
   supportActions = [],
+  familyContacts = [],
 }) => {
   const taskById = new Map(tasks.map(task => [task.id, task.name]));
   const submissionsByDate = new Map();
@@ -153,6 +154,11 @@ export const buildStudentTimeline = ({
     ...supportActions.filter(item => item.studentId === studentId).map(item => ({
       id: item.id, date: item.date, timestamp: timelineTimestamp(item), kind: 'support',
       title: `支援：${item.category}`, detail: `${item.action}${item.outcome ? ` ／ 結果：${item.outcome}` : ''}`,
+      status: item.status,
+    })),
+    ...familyContacts.filter(item => item.studentId === studentId).map(item => ({
+      id: item.id, date: item.date, timestamp: timelineTimestamp(item), kind: 'family-contact',
+      title: `家庭連携：${item.channel}`, detail: `${item.topic}・共有：${item.sharedFacts}・合意：${item.agreement}`,
       status: item.status,
     })),
   ];

@@ -55,11 +55,14 @@ test('timeline groups same-day submissions and sorts all event types newest firs
       { id: 'l2', studentId: '1', taskId: 't2', date: '2026-07-19', timestamp: 2 },
     ],
     forgottenItems: [{ id: 'f1', studentId: '1', itemName: '筆箱', subject: '算数', response: '貸し出し', impact: '影響なし', date: '2026-07-20', timestamp: 3 }],
+    familyContacts: [{ id: 'p1', studentId: '1', channel: '電話', topic: '学習準備', sharedFacts: '忘れ物を共有', agreement: 'チェック表を使う', status: '要フォロー', date: '2026-07-21', createdAt: 4, familyResponse: 'タイムラインに表示しない家庭情報' }],
   });
 
-  assert.equal(timeline.length, 2);
-  assert.equal(timeline[0].kind, 'forgotten-item');
-  assert.equal(timeline[1].title, '提出 2件');
-  assert.match(timeline[1].detail, /音読/);
-  assert.match(timeline[1].detail, /計算/);
+  assert.equal(timeline.length, 3);
+  assert.equal(timeline[0].kind, 'family-contact');
+  assert.equal(timeline[1].kind, 'forgotten-item');
+  assert.equal(timeline[2].title, '提出 2件');
+  assert.match(timeline[2].detail, /音読/);
+  assert.match(timeline[2].detail, /計算/);
+  assert.equal(timeline[0].detail.includes('タイムラインに表示しない家庭情報'), false);
 });
