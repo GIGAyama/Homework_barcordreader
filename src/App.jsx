@@ -3,6 +3,7 @@ import { Mailbox, Settings, Trash2, CheckCircle2, Circle, X, Users, Activity, Pl
 import { useGoogleDriveSync } from './useGoogleDriveSync';
 import ForgottenItemsPanel from './ForgottenItemsPanel';
 import StudentSupportPanel from './StudentSupportPanel';
+import { buildStudentReportInsights } from './reportInsights';
 import {
   DATA_SCHEMA_VERSION,
   buildBackupData,
@@ -153,7 +154,17 @@ const useLocalStorage = (key, initialValue) => {
 // ==========================================
 // 削除（アーカイブ）済みの課題も含めて集計する。削除後の日付は必要回数に数えないため、
 // 「その課題が有効だった期間の必要回数」に対する提出率が正しく計算される。
-const generateReportData = (startDate, endDate, students, tasks, logs, dailyCheckIns = []) => {
+const generateReportData = (
+  startDate,
+  endDate,
+  students,
+  tasks,
+  logs,
+  dailyCheckIns = [],
+  forgottenItems = [],
+  absences = [],
+  supportActions = []
+) => {
   const taskRequirements = {};
   // 課題ごとの「対象週」（週回数タイプ用）: その週に1日でも有効日があればカウント
   const taskActiveWeeks = {};
@@ -202,7 +213,18 @@ const generateReportData = (startDate, endDate, students, tasks, logs, dailyChec
       if (checkIn.feeling && feelings[checkIn.feeling] !== undefined) feelings[checkIn.feeling]++;
     });
 
-    return { student, taskStats, feelings };
+    const insights = buildStudentReportInsights({
+      studentId: student.id,
+      startDate,
+      endDate,
+      taskStats,
+      dailyCheckIns,
+      forgottenItems,
+      absences,
+      supportActions,
+    });
+
+    return { student, taskStats, feelings, insights };
   });
 };
 
@@ -266,8 +288,12 @@ const Footer = () => (
 );
 
 // 🖨️ 印刷用レイアウトコンポーネント
-const PrintReport = ({ data, period }) => {
+const PrintReport = ({ data, period, template = 'term' }) => {
   if (!data || data.length === 0) return null;
+
+  if (template === 'family' || template === 'internal') {
+    return <SupportSummaryPrintReport data={data} period={period} audience={template} />;
+  }
 
   return (
     <div className="only-print w-full bg-white text-black" style={{ display: 'none' }}>
@@ -345,6 +371,140 @@ const PrintReport = ({ data, period }) => {
           </div>
         </div>
       ))}
+    </div>
+  );
+};
+
+const SupportSummaryPrintReport = ({ data, period, audience }) => {
+  const isInternal = audience === 'internal';
+  const title = isInternal ? '児童支援ケースサマリー' : '学校生活・学習サマリー';
+
+  return (
+    <div className="only-print w-full bg-white text-black" style={{ display: 'none' }}>
+      {data.map(report => {
+        const { insights } = report;
+        const supports = isInternal ? insights.internalSupports : insights.familySupports;
+        const reportableTasks = report.taskStats.filter(task => task.required > 0 || task.submitted > 0);
+        const visibleTasks = reportableTasks.slice(0, 6);
+        const visibleSupports = supports.slice(0, 3);
+        return (
+          <div key={report.student.id} className="print-page flex flex-col text-slate-900">
+            <div className="flex items-start justify-between gap-6 border-b-2 border-indigo-700 pb-4 mb-5">
+              <div>
+                <div className="text-xs font-bold tracking-[0.22em] text-indigo-600 mb-1">SHUKUDAI POST REPORT</div>
+                <h1 className="text-2xl font-bold tracking-wider">{title}</h1>
+                <p className="text-sm text-slate-500 font-bold mt-1">対象期間：{period.start} 〜 {period.end}</p>
+              </div>
+              <div className={`px-3 py-2 rounded-lg border text-xs font-bold ${isInternal ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-indigo-50 border-indigo-200 text-indigo-700'}`}>
+                {isInternal ? '校内限定・取扱注意' : '保護者共有用'}
+              </div>
+            </div>
+
+            <div className="flex items-end justify-between gap-4 mb-5">
+              <h2 className="text-2xl font-bold">{report.student.name} さん</h2>
+              <span className="text-sm font-bold text-slate-500">作成日：{getLocalDateString()}</span>
+            </div>
+
+            <div className="grid grid-cols-4 gap-3 mb-5">
+              {[
+                ['課題提出率', insights.overallRate === null ? '—' : `${insights.overallRate}%`, `${insights.totalSubmitted}/${insights.totalRequired}回`],
+                ['朝の記録', `${insights.checkInDays}日`, 'チェックイン'],
+                ['忘れ物', `${insights.forgotten.total}件`, '期間内の記録'],
+                ['欠席・遅刻', `${insights.attendance.total}件`, '期間内の記録'],
+              ].map(([label, value, note]) => (
+                <div key={label} className="border border-slate-200 bg-slate-50 rounded-xl p-3">
+                  <p className="text-[10px] font-bold text-slate-500">{label}</p>
+                  <p className="text-2xl font-bold text-slate-900 mt-1">{value}</p>
+                  <p className="text-[10px] text-slate-500 mt-1">{note}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <section className="border border-slate-200 rounded-xl overflow-hidden">
+                <h3 className="bg-slate-100 px-4 py-2.5 font-bold text-sm flex items-center gap-2"><CheckCircle2 size={16} /> 学習の取り組み</h3>
+                <div className="divide-y divide-slate-100">
+                  {visibleTasks.length === 0 ? (
+                    <p className="p-4 text-xs text-slate-500">対象となる課題記録はありません。</p>
+                  ) : visibleTasks.map(task => (
+                    <div key={task.name} className="px-4 py-2 flex items-center justify-between gap-3 text-xs">
+                      <span className="font-bold truncate">{task.name}</span>
+                      <span className="whitespace-nowrap font-bold">{task.submitted}/{task.required}回・{task.rate}%</span>
+                    </div>
+                  ))}
+                </div>
+                {reportableTasks.length > visibleTasks.length && <p className="px-4 py-2 text-[10px] text-slate-500 bg-slate-50">ほか{reportableTasks.length - visibleTasks.length}課題</p>}
+              </section>
+
+              <section className="border border-slate-200 rounded-xl overflow-hidden">
+                <h3 className="bg-slate-100 px-4 py-2.5 font-bold text-sm flex items-center gap-2"><HeartPulse size={16} /> 朝のきもち</h3>
+                <div className="grid grid-cols-2 gap-px bg-slate-100">
+                  {Object.entries(report.feelings).map(([label, count]) => (
+                    <div key={label} className="bg-white p-3 flex items-center justify-between text-xs">
+                      <span className="font-bold">{label}</span><span className="font-bold text-base">{count}回</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="px-4 py-2 text-[10px] text-slate-500 bg-slate-50">本人が朝に選んだ記録を、そのまま集計しています。</p>
+              </section>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <section className="border border-slate-200 rounded-xl p-4">
+                <h3 className="font-bold text-sm flex items-center gap-2 mb-3"><Backpack size={16} /> 学習準備</h3>
+                {insights.forgotten.topItems.length === 0 ? (
+                  <p className="text-xs text-slate-500">期間内の忘れ物記録はありません。</p>
+                ) : (
+                  <div className="space-y-2 text-xs">
+                    <p><span className="text-slate-500 font-bold">多かったもの：</span>{insights.forgotten.topItems.slice(0, 3).map(item => `${item.label} ${item.count}件`).join('、')}</p>
+                    <p><span className="text-slate-500 font-bold">教科：</span>{insights.forgotten.topSubjects.slice(0, 3).map(item => `${item.label} ${item.count}件`).join('、') || '記録なし'}</p>
+                  </div>
+                )}
+              </section>
+              <section className="border border-slate-200 rounded-xl p-4">
+                <h3 className="font-bold text-sm flex items-center gap-2 mb-3"><UserCheck size={16} /> 出欠の記録</h3>
+                {insights.attendance.byStatus.length === 0 ? (
+                  <p className="text-xs text-slate-500">期間内の欠席・遅刻記録はありません。</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">{insights.attendance.byStatus.map(item => <span key={item.label} className="bg-slate-100 rounded-lg px-3 py-2 text-xs font-bold">{item.label} {item.count}件</span>)}</div>
+                )}
+              </section>
+            </div>
+
+            <section className="border-2 border-indigo-200 rounded-xl overflow-hidden mb-4">
+              <h3 className="bg-indigo-50 px-4 py-2.5 font-bold text-sm text-indigo-900 flex items-center gap-2"><HandHeart size={16} /> {isInternal ? '支援の経過と次回確認' : '学校で取り組んでいること'}</h3>
+              {visibleSupports.length === 0 ? (
+                <p className="p-4 text-xs text-slate-500">対象となる支援記録はありません。</p>
+              ) : (
+                <div className="divide-y divide-indigo-100">
+                  {visibleSupports.map(support => (
+                    <div key={support.id} className="p-3 text-xs">
+                      <div className="flex items-center justify-between gap-3 mb-1.5"><span className="font-bold text-indigo-800">{support.category}</span><span className="font-bold text-slate-500">{support.status}</span></div>
+                      {isInternal && <p><span className="font-bold text-slate-500">確認した事実：</span>{support.observation || '記録なし'}</p>}
+                      <p><span className="font-bold text-slate-500">学校での支援：</span>{support.action || '記録なし'}</p>
+                      <p><span className="font-bold text-slate-500">目指す状態：</span>{support.goal || '記録なし'}</p>
+                      {support.outcome && <p><span className="font-bold text-slate-500">確認した変化：</span>{support.outcome}</p>}
+                      {isInternal && support.followUpDate && <p><span className="font-bold text-slate-500">次回確認：</span>{support.followUpDate}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {supports.length > visibleSupports.length && <p className="px-4 py-2 text-[10px] text-slate-500 bg-indigo-50">ほか{supports.length - visibleSupports.length}件の支援記録</p>}
+            </section>
+
+            <section className="mt-auto">
+              <h3 className="font-bold text-sm mb-2 flex items-center gap-2"><FileText size={16} /> {isInternal ? '協議事項・次の一手' : 'ご家庭と共有したいこと'}</h3>
+              <div className="border-2 border-dashed border-slate-300 rounded-xl h-24 p-3 text-xs text-slate-300 font-bold">印刷後に追記できます</div>
+            </section>
+
+            <p className="text-[9px] text-slate-400 mt-3 leading-relaxed">
+              {isInternal
+                ? '本資料は校内支援の検討用です。事実記録をもとに作成し、児童の診断や評価順位を示すものではありません。取扱いに注意してください。'
+                : '本資料は学校で記録した事実をまとめたものです。自動的な診断や評価は行っていません。内容について気になる点があれば学校へお知らせください。'}
+            </p>
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -506,6 +666,8 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
   
   const [reportStartDate, setReportStartDate] = useState(() => getLocalDateString(new Date(todayForDash.getFullYear(), todayForDash.getMonth(), 1)));
   const [reportEndDate, setReportEndDate] = useState(() => getLocalDateString(new Date(todayForDash.getFullYear(), todayForDash.getMonth() + 1, 0)));
+  const [reportTemplate, setReportTemplate] = useState('term');
+  const [reportStudentId, setReportStudentId] = useState('all');
 
   const [dashboardPreset, setDashboardPreset] = useState('today');
   const [dashboardStart, setDashboardStart] = useState(todayStrForDash);
@@ -909,8 +1071,29 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
   };
 
   const handlePrintReport = () => {
-    const data = generateReportData(reportStartDate, reportEndDate, db.students, db.tasks, db.logs, db.dailyCheckIns);
-    onGenerateReport(data, { start: reportStartDate, end: reportEndDate });
+    if (!reportStartDate || !reportEndDate || reportStartDate > reportEndDate) {
+      showToast('レポートの期間を正しく設定してください', 'error');
+      return;
+    }
+    const targetStudents = reportStudentId === 'all'
+      ? db.students
+      : db.students.filter(student => student.id === reportStudentId);
+    if (targetStudents.length === 0) {
+      showToast('レポートを作成する児童を選択してください', 'error');
+      return;
+    }
+    const data = generateReportData(
+      reportStartDate,
+      reportEndDate,
+      targetStudents,
+      db.tasks,
+      db.logs,
+      db.dailyCheckIns,
+      db.forgottenItems,
+      db.absences,
+      db.supportActions
+    );
+    onGenerateReport(data, { start: reportStartDate, end: reportEndDate }, reportTemplate);
     setTimeout(() => window.print(), 500);
   };
 
@@ -1431,31 +1614,82 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
 
         {activeTab === 'report' && (
           <div className="space-y-4 animate-fade-in-up">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-4">
-              <h3 className="text-sm font-bold text-slate-600">学期末レポート（PDF）の作成</h3>
-              <p className="text-xs text-slate-500 font-bold mb-2 leading-relaxed">
-                指定した期間の「提出状況」と「きもち」を集計し、保護者配布用の個別レポート（A4サイズ1枚ずつ）を作成します。
-              </p>
-              
-              <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <div className="flex-1">
-                  <label className="block text-xs font-bold text-slate-500 mb-1">開始日</label>
-                  <DateInput value={reportStartDate} onChange={e=>setReportStartDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all shadow-sm" />
-                </div>
-                <div className="text-slate-400 font-bold mt-5">〜</div>
-                <div className="flex-1">
-                  <label className="block text-xs font-bold text-slate-500 mb-1">終了日</label>
-                  <DateInput value={reportEndDate} onChange={e=>setReportEndDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all shadow-sm" />
+            <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 p-6 rounded-3xl shadow-lg text-white relative overflow-hidden">
+              <FileText size={150} className="absolute -right-8 -bottom-10 opacity-10" />
+              <div className="relative z-10">
+                <span className="text-xs font-bold tracking-[0.18em] text-indigo-200">REPORT CENTER</span>
+                <h3 className="text-2xl font-bold mt-2">レポートセンター</h3>
+                <p className="text-sm font-bold text-slate-300 mt-2 max-w-2xl leading-relaxed">目的に合わせて、学期末の提出レポート、保護者面談サマリー、校内支援会議資料を作成します。</p>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-6">
+              <div>
+                <h4 className="text-sm font-bold text-slate-700 mb-3">1. 資料の種類</h4>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                  {[
+                    { id: 'term', title: '学期末レポート', detail: '提出状況と朝のきもちを詳しく共有', badge: '従来形式', tone: 'red' },
+                    { id: 'family', title: '保護者面談サマリー', detail: '学習・生活・学校の支援をA4一枚に集約', badge: 'おすすめ', tone: 'indigo' },
+                    { id: 'internal', title: '校内支援ケース資料', detail: '事実・支援・振り返り期限を校内で検討', badge: '校内限定', tone: 'amber' },
+                  ].map(template => {
+                    const selected = reportTemplate === template.id;
+                    const selectedClass = template.tone === 'red'
+                      ? 'border-red-400 bg-red-50 ring-red-100'
+                      : template.tone === 'amber'
+                        ? 'border-amber-400 bg-amber-50 ring-amber-100'
+                        : 'border-indigo-500 bg-indigo-50 ring-indigo-100';
+                    return (
+                      <button key={template.id} type="button" onClick={() => setReportTemplate(template.id)} className={`text-left p-4 rounded-2xl border-2 transition-all ${selected ? `${selectedClass} ring-4` : 'border-slate-100 hover:border-slate-200 bg-white'}`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-slate-800">{template.title}</span>
+                          <span className="text-[10px] font-bold bg-white/80 border border-slate-200 text-slate-500 px-2 py-1 rounded-full">{template.badge}</span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-2 leading-relaxed">{template.detail}</p>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              <button onClick={handlePrintReport} className="bg-slate-800 text-white font-bold py-4 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2 mt-2 shadow-sm hover:bg-slate-700">
-                <Printer size={20} /> レポートを作成して印刷（PDF保存）
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-4">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-700 mb-3">2. 集計期間</h4>
+                  <div className="flex items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <div className="flex-1">
+                      <label className="block text-xs font-bold text-slate-500 mb-1">開始日</label>
+                      <DateInput value={reportStartDate} onChange={e=>setReportStartDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-all shadow-sm" />
+                    </div>
+                    <div className="text-slate-400 font-bold mt-5">〜</div>
+                    <div className="flex-1">
+                      <label className="block text-xs font-bold text-slate-500 mb-1">終了日</label>
+                      <DateInput value={reportEndDate} onChange={e=>setReportEndDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-all shadow-sm" />
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-700 mb-3">3. 対象児童</h4>
+                  <select value={reportStudentId} onChange={event => setReportStudentId(event.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-3.5 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                    <option value="all">クラス全員（{db.students.length}名）</option>
+                    {db.students.map(student => <option key={student.id} value={student.id}>{student.id}. {student.name}</option>)}
+                  </select>
+                  <p className="text-[11px] text-slate-400 mt-2">児童ごとにA4一枚で出力します。</p>
+                </div>
+              </div>
+
+              {reportTemplate !== 'term' && (
+                <div className={`text-xs p-4 rounded-xl border leading-relaxed ${reportTemplate === 'internal' ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-indigo-50 border-indigo-100 text-indigo-800'}`}>
+                  <p className="font-bold flex items-center gap-2"><ShieldAlert size={16} /> {reportTemplate === 'internal' ? '校内限定資料です' : '共有範囲を安全に制御します'}</p>
+                  <p className="mt-1">{reportTemplate === 'internal' ? '教師の観察事実と振り返り予定日を含みます。印刷物の保管・廃棄に注意してください。' : '教師の内部観察メモと振り返り予定日は掲載せず、集計された事実と学校での具体的な取り組みだけを出力します。'}</p>
+                </div>
+              )}
+
+              <button onClick={handlePrintReport} className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl transition-all active:scale-[0.99] flex items-center justify-center gap-2 shadow-md hover:bg-slate-800">
+                <Printer size={20} /> {reportStudentId === 'all' ? `${db.students.length}名分を` : '選択した児童の資料を'}作成して印刷
               </button>
-              
-              <div className="text-xs text-slate-500 mt-2 bg-indigo-50 p-4 rounded-xl border border-indigo-100 leading-relaxed">
-                <p className="font-bold text-indigo-700 mb-2 flex items-center gap-1"><FileText size={14}/> PDF保存のコツ</p>
-                <p>印刷画面が開いたら、送信先（プリンター）を<b>「PDFに保存」</b>に変更してください。<br/>※設定で<b>「背景のグラフィック」にチェック</b>を入れると、アイコンの色などが綺麗に出力されます。</p>
+
+              <div className="text-xs text-slate-500 bg-slate-50 p-4 rounded-xl border border-slate-200 leading-relaxed">
+                <p className="font-bold text-slate-700 mb-1 flex items-center gap-1"><FileText size={14}/> PDF保存</p>
+                <p>印刷画面の送信先を<b>「PDFに保存」</b>に変更してください。背景色を出す場合は<b>「背景のグラフィック」</b>を有効にします。共有前に必ず内容を確認してください。</p>
               </div>
             </div>
           </div>
@@ -1636,6 +1870,7 @@ export default function App() {
 
   const [reportData, setReportData] = useState([]);
   const [reportPeriod, setReportPeriod] = useState({ start: '', end: '' });
+  const [reportTemplate, setReportTemplate] = useState('term');
 
   const [students, setStudents] = useLocalStorage('hp_students', [
     { id: '1', name: 'さとう 花子' },
@@ -1786,7 +2021,11 @@ export default function App() {
               showToast={showToastMsg}
               db={db}
               drive={drive}
-              onGenerateReport={(data, period) => { setReportData(data); setReportPeriod(period); }}
+              onGenerateReport={(data, period, template) => {
+                setReportData(data);
+                setReportPeriod(period);
+                setReportTemplate(template);
+              }}
               isPrinting={isPrinting}
             />
           )}
@@ -1826,7 +2065,7 @@ export default function App() {
         )}
       </div>
 
-      <PrintReport data={reportData} period={reportPeriod} />
+      <PrintReport data={reportData} period={reportPeriod} template={reportTemplate} />
     </>
   );
 }
