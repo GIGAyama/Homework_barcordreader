@@ -1,4 +1,4 @@
-export const DATA_SCHEMA_VERSION = 2;
+export const DATA_SCHEMA_VERSION = 3;
 
 const randomPart = () => {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -66,6 +66,43 @@ export const createForgottenItemEvent = ({
   timestamp,
 });
 
+export const createSupportAction = ({
+  student,
+  date,
+  category,
+  observation,
+  action,
+  goal,
+  followUpDate,
+  timestamp = Date.now(),
+}) => ({
+  id: createEventId('support-action'),
+  eventType: 'support-action',
+  date,
+  studentId: student.id,
+  studentName: student.name,
+  category,
+  observation: observation.trim(),
+  action: action.trim(),
+  goal: goal.trim(),
+  followUpDate,
+  status: '実施中',
+  outcome: '',
+  outcomeRating: null,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+
+export const recordSupportOutcome = (supportActions, id, { outcome, outcomeRating, status }) =>
+  (supportActions || []).map(item => item.id === id ? {
+    ...item,
+    outcome: outcome.trim(),
+    outcomeRating,
+    status,
+    completedAt: status === '完了' ? Date.now() : null,
+    updatedAt: Date.now(),
+  } : item);
+
 const normalizeTasks = (tasks = []) => tasks.map((task, index) => ({
   ...task,
   id: String(task.id || `legacy-task-${index + 1}`),
@@ -126,7 +163,13 @@ export const migrateData = (source = {}) => {
     absences: source.absences || [],
     dailyCheckIns: migrateLegacyCheckIns(source.logs || [], source.dailyCheckIns || []),
     forgottenItems: (source.forgottenItems || []).map(item => ({ ...item, eventType: 'forgotten-item' })),
-    supportActions: (source.supportActions || []).map(item => ({ ...item, eventType: 'support-action' })),
+    supportActions: (source.supportActions || []).map(item => ({
+      status: '実施中',
+      outcome: '',
+      outcomeRating: null,
+      ...item,
+      eventType: 'support-action',
+    })),
   };
 };
 
