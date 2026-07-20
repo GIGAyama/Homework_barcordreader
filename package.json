@@ -1,12 +1,14 @@
 {
   "name": "homework_barcordreader",
   "version": "1.0.0",
+  "type": "module",
   "description": "「宿題ポスト」は、小学校の教室に欠かせない **宿題の提出確認** と **朝の健康観察（きもちメーター）** を、ChromebookやiPadから一瞬で完了できるWebアプリケーションです。",
   "main": "index.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test"
   },
   "repository": {
     "type": "git",

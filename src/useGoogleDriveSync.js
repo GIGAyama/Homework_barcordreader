@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { loadGsi, createTokenClient, revokeToken, findBackupFile, uploadBackup, downloadBackup } from './googleDrive';
+import { buildBackupData, isValidBackupData, migrateData } from './dataModel';
 
 // ==========================================
 // ☁️ Google ドライブ同期フック
@@ -25,20 +26,6 @@ const readNum = (key) => {
 const writeNum = (key, val) => {
   try { window.localStorage.setItem(key, String(val)); } catch { /* 保存不可でも致命的でない */ }
 };
-
-// バックアップ用オブジェクトを生成（ローカルバックアップと同一形式＋同期メタ情報）
-const buildBackupObject = (db, updatedAt) => ({
-  students: db.students,
-  tasks: db.tasks,
-  logs: db.logs,
-  config: db.config,
-  absences: db.absences || [],
-  exportDate: new Date().toISOString(),
-  syncMeta: { app: 'shukudai-post', version: 1, updatedAt },
-});
-
-const isValidBackup = (data) =>
-  data && data.students && data.tasks && data.logs && data.config;
 
 export const useGoogleDriveSync = ({ db, clientId, autoSync, showToast }) => {
   const [connected, setConnected] = useState(false);
@@ -120,14 +107,19 @@ export const useGoogleDriveSync = ({ db, clientId, autoSync, showToast }) => {
 
   // ---- リモートデータの適用 -------------------------------------------------
   const applyRemote = useCallback((data) => {
-    if (!isValidBackup(data)) throw new Error('クラウドのデータ形式が正しくありません');
+    if (!isValidBackupData(data)) throw new Error('クラウドのデータ形式が正しくありません');
+    const migrated = migrateData(data);
     applyingRemoteRef.current = true;
     const d = dbRef.current;
-    d.setStudents(data.students);
-    d.setTasks(data.tasks);
-    d.setLogs(data.logs);
-    d.setConfig(data.config);
-    d.setAbsences(data.absences || []);
+    d.setStudents(migrated.students);
+    d.setTasks(migrated.tasks);
+    d.setLogs(migrated.logs);
+    d.setConfig(migrated.config);
+    d.setAbsences(migrated.absences);
+    d.setDailyCheckIns(migrated.dailyCheckIns);
+    d.setForgottenItems(migrated.forgottenItems);
+    d.setSupportActions(migrated.supportActions);
+    d.setSchemaVersion(migrated.schemaVersion);
 
     const at = data.syncMeta?.updatedAt || Date.now();
     writeNum(LOCAL_UPDATED_KEY, at);
@@ -142,7 +134,7 @@ export const useGoogleDriveSync = ({ db, clientId, autoSync, showToast }) => {
     const token = await getToken({ interactive: !!interactive });
     const existing = await findBackupFile(token);
     const at = Date.now();
-    const payload = buildBackupObject(dbRef.current, at);
+    const payload = buildBackupData(dbRef.current, at);
     await uploadBackup(token, payload, existing?.id);
     writeNum(LOCAL_UPDATED_KEY, at);
     writeNum(REMOTE_SEEN_KEY, at);
@@ -247,7 +239,18 @@ export const useGoogleDriveSync = ({ db, clientId, autoSync, showToast }) => {
     }, 4000);
 
     return () => clearTimeout(debounceRef.current);
-  }, [db.students, db.tasks, db.logs, db.config, db.absences, doUpload]);
+  }, [
+    db.students,
+    db.tasks,
+    db.logs,
+    db.config,
+    db.absences,
+    db.dailyCheckIns,
+    db.forgottenItems,
+    db.supportActions,
+    db.schemaVersion,
+    doUpload,
+  ]);
 
   // ---- 自動化② 起動時の同期チェック（自動同期ON時のみ） ------------------
   useEffect(() => {
