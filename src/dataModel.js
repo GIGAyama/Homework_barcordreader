@@ -1,4 +1,4 @@
-export const DATA_SCHEMA_VERSION = 5;
+export const DATA_SCHEMA_VERSION = 6;
 
 const randomPart = () => {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -6,6 +6,24 @@ const randomPart = () => {
 };
 
 export const createEventId = (prefix = 'event') => `${prefix}-${Date.now()}-${randomPart()}`;
+
+export const createAiActivity = ({
+  task,
+  status,
+  model = '',
+  sourceRecordCount = 0,
+  timestamp = Date.now(),
+}) => ({
+  id: createEventId('ai-activity'),
+  eventType: 'ai-activity',
+  task,
+  status,
+  model,
+  sourceRecordCount,
+  createdAt: timestamp,
+  // 送信内容や生成文は、監査履歴・バックアップへ意図的に保存しない。
+  contentStored: false,
+});
 
 export const submissionMatchesTask = (submission, task) =>
   submission.taskId ? submission.taskId === task.id : submission.taskName === task.name;
@@ -188,6 +206,19 @@ const normalizeTasks = (tasks = []) => tasks.map((task, index) => ({
   excludeDates: task.excludeDates || [],
 }));
 
+const finiteNumber = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+
+const normalizeAiActivity = (items = []) => items.slice(-200).map((item, index) => ({
+  id: String(item.id || `legacy-ai-activity-${index + 1}`).slice(0, 160),
+  eventType: 'ai-activity',
+  task: String(item.task || 'unknown').slice(0, 80),
+  status: String(item.status || 'unknown').slice(0, 40),
+  model: String(item.model || '').slice(0, 120),
+  sourceRecordCount: Math.max(0, finiteNumber(item.sourceRecordCount)),
+  createdAt: finiteNumber(item.createdAt, Date.now()),
+  contentStored: false,
+}));
+
 const migrateLegacyCheckIns = (logs = [], existingCheckIns = []) => {
   const byStudentAndDate = new Map();
 
@@ -263,6 +294,7 @@ export const migrateData = (source = {}) => {
       ...item,
       eventType: 'family-contact',
     })),
+    aiActivity: normalizeAiActivity(source.aiActivity),
   };
 };
 
@@ -278,6 +310,7 @@ export const buildBackupData = (db, updatedAt = Date.now()) => ({
   supportActions: db.supportActions || [],
   classActions: db.classActions || [],
   familyContacts: db.familyContacts || [],
+  aiActivity: normalizeAiActivity(db.aiActivity),
   exportDate: new Date().toISOString(),
   syncMeta: { app: 'shukudai-post', version: DATA_SCHEMA_VERSION, updatedAt },
 });

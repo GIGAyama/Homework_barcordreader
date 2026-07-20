@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Mailbox, Settings, Trash2, CheckCircle2, Circle, X, Users, Activity, Plus, Check, HeartPulse, ShieldAlert, Printer, FileText, Smile, Moon, Zap, CloudRain, PartyPopper, Sparkles, GraduationCap, ClipboardList, CalendarRange, Database, Download, Upload, AlertTriangle, RefreshCw, Pencil, Save, UserCheck, UserX, Clock, PlusCircle, MinusCircle, CalendarOff, Archive, ArchiveRestore, Cloud, CloudUpload, CloudDownload, Link2, Unlink, Loader2, KeyRound, ExternalLink, Backpack, HandHeart, MessageSquare } from 'lucide-react';
+import { Mailbox, Settings, Trash2, CheckCircle2, Circle, X, Users, Activity, Plus, Check, HeartPulse, ShieldAlert, Printer, FileText, Smile, Moon, Zap, CloudRain, PartyPopper, Sparkles, GraduationCap, ClipboardList, CalendarRange, Database, Download, Upload, AlertTriangle, RefreshCw, Pencil, Save, UserCheck, UserX, Clock, PlusCircle, MinusCircle, CalendarOff, Archive, ArchiveRestore, Cloud, CloudUpload, CloudDownload, Link2, Unlink, Loader2, KeyRound, ExternalLink, Backpack, HandHeart, MessageSquare, Bot } from 'lucide-react';
 import { useGoogleDriveSync } from './useGoogleDriveSync';
 import ForgottenItemsPanel from './ForgottenItemsPanel';
 import StudentSupportPanel from './StudentSupportPanel';
@@ -7,6 +7,7 @@ import ClassInsightsPanel from './ClassInsightsPanel';
 import FamilyEngagementPanel from './FamilyEngagementPanel';
 import OperationsCenterPanel from './OperationsCenterPanel';
 import SafetySnapshotPanel from './SafetySnapshotPanel';
+import TeacherAiPanel from './TeacherAiPanel';
 import { buildStudentReportInsights } from './reportInsights';
 import { shiftDate } from './studentInsights';
 import { isTaskDueOn } from './taskSchedule';
@@ -635,7 +636,7 @@ const CompleteView = ({ onFinish }) => {
 // ==========================================
 // 👩‍🏫 先生用：管理画面 (パフォーマンス最適化済)
 // ==========================================
-const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting }) => {
+const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrinting }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [newStudent, setNewStudent] = useState({ id: '', name: '' });
   const [bulkStudents, setBulkStudents] = useState('');
@@ -1085,7 +1086,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
   };
 
   const handleYearlyReset = async () => {
-    const inputPin = window.prompt('【⚠️警告：データの初期化】\n新年度に向けて、名簿・課題・提出・きもち・出欠・忘れ物・児童支援・学級改善・家庭連携の記録をすべて完全に削除します。\n（※実行前に必ず「バックアップを保存」してください）\n\n本当に初期化する場合は、先生用PINコードを入力してください。');
+    const inputPin = window.prompt('【⚠️警告：データの初期化】\n新年度に向けて、名簿・課題・提出・きもち・出欠・忘れ物・児童支援・学級改善・家庭連携・AI利用履歴の記録をすべて完全に削除します。\n（※実行前に必ず「バックアップを保存」してください）\n\n本当に初期化する場合は、先生用PINコードを入力してください。');
     if (inputPin === null) return;
     if (await verifyPin(inputPin, db.config)) {
       try {
@@ -1095,7 +1096,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
         return;
       }
       db.setStudents([]); db.setTasks([]); db.setLogs([]); db.setAbsences([]);
-      db.setDailyCheckIns([]); db.setForgottenItems([]); db.setSupportActions([]); db.setClassActions([]); db.setFamilyContacts([]);
+      db.setDailyCheckIns([]); db.setForgottenItems([]); db.setSupportActions([]); db.setClassActions([]); db.setFamilyContacts([]); db.setAiActivity([]);
       showToast('データを初期化し、新年度の準備が完了しました');
     } else {
       showToast('PINコードが違うため初期化をキャンセルしました', 'error');
@@ -1142,6 +1143,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
         {[
           { id: 'dashboard', icon: <Activity size={16}/>, label: 'ダッシュボード' },
           { id: 'operations', icon: <Clock size={16}/>, label: '今日の校務' },
+          { id: 'ai-assistant', icon: <Bot size={16}/>, label: 'AI教師支援' },
           { id: 'class-insights', icon: <Sparkles size={16}/>, label: '学級改善' },
           { id: 'forgotten', icon: <Backpack size={16}/>, label: '忘れ物・準備' },
           { id: 'support', icon: <HandHeart size={16}/>, label: '児童支援' },
@@ -1421,6 +1423,10 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
 
         {activeTab === 'operations' && (
           <OperationsCenterPanel db={db} today={todayStrForDash} onNavigate={setActiveTab} showToast={showToast} />
+        )}
+
+        {activeTab === 'ai-assistant' && (
+          <TeacherAiPanel db={db} ai={ai} showToast={showToast} today={todayStrForDash} />
         )}
 
         {activeTab === 'class-insights' && (
@@ -1986,11 +1992,15 @@ export default function App() {
   const [supportActions, setSupportActions] = useLocalStorage('hp_support_actions', []);
   const [classActions, setClassActions] = useLocalStorage('hp_class_actions', []);
   const [familyContacts, setFamilyContacts] = useLocalStorage('hp_family_contacts', []);
+  const [aiActivity, setAiActivity] = useLocalStorage('hp_ai_activity', []);
   const [schemaVersion, setSchemaVersion] = useLocalStorage('hp_schema_version', 1);
 
   // ☁️ Googleドライブ同期の設定（クライアントID・自動同期のON/OFF）
   const [driveClientId, setDriveClientId] = useLocalStorage('hp_gdrive_client_id', '');
   const [driveAutoSync, setDriveAutoSync] = useLocalStorage('hp_gdrive_autosync', false);
+  // AI接続資格情報は業務データと分離し、バックアップ・Drive同期へ含めない。
+  const [aiProxyUrl, setAiProxyUrl] = useLocalStorage('hp_ai_proxy_url', '');
+  const [aiGatewayToken, setAiGatewayToken] = useLocalStorage('hp_ai_gateway_token', '');
 
   const db = useMemo(() => ({
     students, setStudents,
@@ -2003,13 +2013,14 @@ export default function App() {
     supportActions, setSupportActions,
     classActions, setClassActions,
     familyContacts, setFamilyContacts,
+    aiActivity, setAiActivity,
     schemaVersion, setSchemaVersion,
-  }), [students, setStudents, tasks, setTasks, logs, setLogs, config, setConfig, absences, setAbsences, dailyCheckIns, setDailyCheckIns, forgottenItems, setForgottenItems, supportActions, setSupportActions, classActions, setClassActions, familyContacts, setFamilyContacts, schemaVersion, setSchemaVersion]);
+  }), [students, setStudents, tasks, setTasks, logs, setLogs, config, setConfig, absences, setAbsences, dailyCheckIns, setDailyCheckIns, forgottenItems, setForgottenItems, supportActions, setSupportActions, classActions, setClassActions, familyContacts, setFamilyContacts, aiActivity, setAiActivity, schemaVersion, setSchemaVersion]);
 
   // 旧形式の各記録を、現在のイベントコレクションへ安全に移行する。
   useEffect(() => {
     if (Number(schemaVersion) >= DATA_SCHEMA_VERSION) return;
-    const migrated = migrateData({ students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions, classActions, familyContacts });
+    const migrated = migrateData({ students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions, classActions, familyContacts, aiActivity });
     setTasks(migrated.tasks);
     setLogs(migrated.logs);
     setDailyCheckIns(migrated.dailyCheckIns);
@@ -2017,8 +2028,9 @@ export default function App() {
     setSupportActions(migrated.supportActions);
     setClassActions(migrated.classActions);
     setFamilyContacts(migrated.familyContacts);
+    setAiActivity(migrated.aiActivity);
     setSchemaVersion(migrated.schemaVersion);
-  }, [schemaVersion, students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions, classActions, familyContacts, setTasks, setLogs, setDailyCheckIns, setForgottenItems, setSupportActions, setClassActions, setFamilyContacts, setSchemaVersion]);
+  }, [schemaVersion, students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions, classActions, familyContacts, aiActivity, setTasks, setLogs, setDailyCheckIns, setForgottenItems, setSupportActions, setClassActions, setFamilyContacts, setAiActivity, setSchemaVersion]);
 
   // 旧バージョンの平文PINを、初回起動時にPBKDF2ハッシュへ無停止で移行する。
   useEffect(() => {
@@ -2049,7 +2061,7 @@ export default function App() {
       }
     }, 1500);
     return () => window.clearTimeout(timer);
-  }, [students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions, classActions, familyContacts, schemaVersion, db, showToastMsg]);
+  }, [students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions, classActions, familyContacts, aiActivity, schemaVersion, db, showToastMsg]);
 
   // ☁️ Googleドライブ同期フック（複数端末でのデータ共有）
   const driveSync = useGoogleDriveSync({ db, clientId: driveClientId, autoSync: driveAutoSync, showToast: showToastMsg });
@@ -2058,6 +2070,12 @@ export default function App() {
     clientId: driveClientId, setClientId: setDriveClientId,
     autoSync: driveAutoSync, setAutoSync: setDriveAutoSync,
   }), [driveSync, driveClientId, setDriveClientId, driveAutoSync, setDriveAutoSync]);
+  const ai = useMemo(() => ({
+    proxyUrl: aiProxyUrl,
+    setProxyUrl: setAiProxyUrl,
+    gatewayToken: aiGatewayToken,
+    setGatewayToken: setAiGatewayToken,
+  }), [aiProxyUrl, setAiProxyUrl, aiGatewayToken, setAiGatewayToken]);
 
   const handleScan = useCallback((id) => {
     const student = db.students.find(s => s.id === id);
@@ -2176,6 +2194,7 @@ export default function App() {
               showToast={showToastMsg}
               db={db}
               drive={drive}
+              ai={ai}
               onGenerateReport={(data, period, template) => {
                 setReportData(data);
                 setReportPeriod(period);

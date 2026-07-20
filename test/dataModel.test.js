@@ -33,6 +33,7 @@ test('legacy feelings are deduplicated into one daily check-in', () => {
   assert.equal(migrated.logs[0].taskId, 'task-1');
   assert.deepEqual(migrated.classActions, []);
   assert.deepEqual(migrated.familyContacts, []);
+  assert.deepEqual(migrated.aiActivity, []);
 });
 
 test('existing daily check-in takes precedence over legacy log data', () => {
@@ -68,7 +69,7 @@ test('submission matching prefers stable task ids while supporting legacy names'
 test('backup includes every versioned event collection', () => {
   const backup = buildBackupData({
     students: [], tasks: [], logs: [], config: { pin: 'x' }, absences: [],
-    dailyCheckIns: [{ id: 'c' }], forgottenItems: [{ id: 'f' }], supportActions: [{ id: 's' }], classActions: [{ id: 'a' }], familyContacts: [{ id: 'p' }],
+    dailyCheckIns: [{ id: 'c' }], forgottenItems: [{ id: 'f' }], supportActions: [{ id: 's' }], classActions: [{ id: 'a' }], familyContacts: [{ id: 'p' }], aiActivity: [{ id: 'ai', contentStored: false }],
   }, 123);
 
   assert.equal(backup.schemaVersion, DATA_SCHEMA_VERSION);
@@ -77,7 +78,20 @@ test('backup includes every versioned event collection', () => {
   assert.equal(backup.supportActions.length, 1);
   assert.equal(backup.classActions.length, 1);
   assert.equal(backup.familyContacts.length, 1);
+  assert.equal(backup.aiActivity.length, 1);
   assert.equal(backup.syncMeta.updatedAt, 123);
+});
+
+test('AI audit backup keeps metadata but strips prompts, generated text and connection secrets', () => {
+  const backup = buildBackupData({
+    students: [], tasks: [], logs: [], config: { pin: 'x' },
+    aiActivity: [{ id: 'ai', task: 'class_weekly_summary', status: 'generated', model: 'gemini', sourceRecordCount: 4, createdAt: 100, prompt: 'private input', draft: 'private output' }],
+    aiProxyUrl: 'https://secret.example',
+    aiGatewayToken: 'secret-token',
+  });
+  const serialized = JSON.stringify(backup);
+  assert.equal(backup.aiActivity[0].contentStored, false);
+  assert.doesNotMatch(serialized, /private input|private output|secret-token|secret\.example/);
 });
 
 test('family contact separates shared facts, private response, agreement and follow-up', () => {

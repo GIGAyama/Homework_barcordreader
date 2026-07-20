@@ -349,6 +349,7 @@ export const useGoogleDriveSync = ({ db, clientId, autoSync, showToast }) => {
     db.supportActions,
     db.classActions,
     db.familyContacts,
+    db.aiActivity,
     db.schemaVersion,
     doUpload,
   ]);
