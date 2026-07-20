@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import {
   DATA_SCHEMA_VERSION,
   buildBackupData,
+  createClassImprovementAction,
   createSupportAction,
   migrateData,
+  recordClassImprovementOutcome,
   recordSupportOutcome,
   submissionMatchesTask,
   upsertDailyCheckIn,
@@ -27,6 +29,7 @@ test('legacy feelings are deduplicated into one daily check-in', () => {
   assert.equal(migrated.logs.length, 2);
   assert.ok(migrated.logs.every(log => !Object.hasOwn(log, 'feeling')));
   assert.equal(migrated.logs[0].taskId, 'task-1');
+  assert.deepEqual(migrated.classActions, []);
 });
 
 test('existing daily check-in takes precedence over legacy log data', () => {
@@ -62,14 +65,40 @@ test('submission matching prefers stable task ids while supporting legacy names'
 test('backup includes every versioned event collection', () => {
   const backup = buildBackupData({
     students: [], tasks: [], logs: [], config: { pin: 'x' }, absences: [],
-    dailyCheckIns: [{ id: 'c' }], forgottenItems: [{ id: 'f' }], supportActions: [{ id: 's' }],
+    dailyCheckIns: [{ id: 'c' }], forgottenItems: [{ id: 'f' }], supportActions: [{ id: 's' }], classActions: [{ id: 'a' }],
   }, 123);
 
   assert.equal(backup.schemaVersion, DATA_SCHEMA_VERSION);
   assert.equal(backup.dailyCheckIns.length, 1);
   assert.equal(backup.forgottenItems.length, 1);
   assert.equal(backup.supportActions.length, 1);
+  assert.equal(backup.classActions.length, 1);
   assert.equal(backup.syncMeta.updatedAt, 123);
+});
+
+test('class improvement action keeps evidence, measure and outcome as separate fields', () => {
+  const action = createClassImprovementAction({
+    sourceInsightId: 'forgotten-preparation',
+    area: '学習準備',
+    title: '持ち物案内を見直す',
+    evidence: '直近14日で筆箱の忘れ物が5件',
+    action: '前日の帰りの会で持ち物カードを確認する',
+    measure: '次の14日間の筆箱の忘れ物件数',
+    startDate: '2026-07-20',
+    reviewDate: '2026-08-03',
+    timestamp: 100,
+  });
+
+  assert.equal(action.status, '実施中');
+  assert.equal(action.measure, '次の14日間の筆箱の忘れ物件数');
+  const reviewed = recordClassImprovementOutcome([action], action.id, {
+    result: '5件から2件になった',
+    outcomeRating: '改善',
+    status: '完了',
+  });
+  assert.equal(reviewed[0].status, '完了');
+  assert.equal(reviewed[0].outcomeRating, '改善');
+  assert.match(reviewed[0].result, /2件/);
 });
 
 test('support action records observation, action, goal and reviewed outcome separately', () => {

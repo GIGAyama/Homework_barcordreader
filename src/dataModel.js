@@ -1,4 +1,4 @@
-export const DATA_SCHEMA_VERSION = 3;
+export const DATA_SCHEMA_VERSION = 4;
 
 const randomPart = () => {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -103,6 +103,44 @@ export const recordSupportOutcome = (supportActions, id, { outcome, outcomeRatin
     updatedAt: Date.now(),
   } : item);
 
+export const createClassImprovementAction = ({
+  sourceInsightId,
+  area,
+  title,
+  evidence,
+  action,
+  measure,
+  startDate,
+  reviewDate,
+  timestamp = Date.now(),
+}) => ({
+  id: createEventId('class-action'),
+  eventType: 'class-improvement-action',
+  sourceInsightId,
+  area,
+  title,
+  evidence,
+  action,
+  measure,
+  startDate,
+  reviewDate,
+  status: '実施中',
+  result: '',
+  outcomeRating: null,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+
+export const recordClassImprovementOutcome = (classActions, id, { result, outcomeRating, status }) =>
+  (classActions || []).map(item => item.id === id ? {
+    ...item,
+    result: result.trim(),
+    outcomeRating,
+    status,
+    completedAt: status === '完了' ? Date.now() : null,
+    updatedAt: Date.now(),
+  } : item);
+
 const normalizeTasks = (tasks = []) => tasks.map((task, index) => ({
   ...task,
   id: String(task.id || `legacy-task-${index + 1}`),
@@ -170,6 +208,13 @@ export const migrateData = (source = {}) => {
       ...item,
       eventType: 'support-action',
     })),
+    classActions: (source.classActions || []).map(item => ({
+      status: '実施中',
+      result: '',
+      outcomeRating: null,
+      ...item,
+      eventType: 'class-improvement-action',
+    })),
   };
 };
 
@@ -183,6 +228,7 @@ export const buildBackupData = (db, updatedAt = Date.now()) => ({
   dailyCheckIns: db.dailyCheckIns || [],
   forgottenItems: db.forgottenItems || [],
   supportActions: db.supportActions || [],
+  classActions: db.classActions || [],
   exportDate: new Date().toISOString(),
   syncMeta: { app: 'shukudai-post', version: DATA_SCHEMA_VERSION, updatedAt },
 });

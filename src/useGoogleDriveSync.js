@@ -119,6 +119,7 @@ export const useGoogleDriveSync = ({ db, clientId, autoSync, showToast }) => {
     d.setDailyCheckIns(migrated.dailyCheckIns);
     d.setForgottenItems(migrated.forgottenItems);
     d.setSupportActions(migrated.supportActions);
+    d.setClassActions(migrated.classActions);
     d.setSchemaVersion(migrated.schemaVersion);
 
     const at = data.syncMeta?.updatedAt || Date.now();
@@ -248,6 +249,7 @@ export const useGoogleDriveSync = ({ db, clientId, autoSync, showToast }) => {
     db.dailyCheckIns,
     db.forgottenItems,
     db.supportActions,
+    db.classActions,
     db.schemaVersion,
     doUpload,
   ]);

@@ -3,7 +3,9 @@ import { Mailbox, Settings, Trash2, CheckCircle2, Circle, X, Users, Activity, Pl
 import { useGoogleDriveSync } from './useGoogleDriveSync';
 import ForgottenItemsPanel from './ForgottenItemsPanel';
 import StudentSupportPanel from './StudentSupportPanel';
+import ClassInsightsPanel from './ClassInsightsPanel';
 import { buildStudentReportInsights } from './reportInsights';
+import { shiftDate } from './studentInsights';
 import {
   DATA_SCHEMA_VERSION,
   buildBackupData,
@@ -674,6 +676,18 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
   const [dashboardEnd, setDashboardEnd] = useState(todayStrForDash);
 
   const isSingleDay = dashboardStart === dashboardEnd;
+  const classInsightCurrentEnd = todayStrForDash;
+  const classInsightCurrentStart = shiftDate(classInsightCurrentEnd, -13);
+  const classInsightPreviousEnd = shiftDate(classInsightCurrentStart, -1);
+  const classInsightPreviousStart = shiftDate(classInsightPreviousEnd, -13);
+  const classInsightCurrentReports = useMemo(
+    () => generateReportData(classInsightCurrentStart, classInsightCurrentEnd, db.students, db.tasks, db.logs, db.dailyCheckIns),
+    [classInsightCurrentStart, classInsightCurrentEnd, db.students, db.tasks, db.logs, db.dailyCheckIns]
+  );
+  const classInsightPreviousReports = useMemo(
+    () => generateReportData(classInsightPreviousStart, classInsightPreviousEnd, db.students, db.tasks, db.logs, db.dailyCheckIns),
+    [classInsightPreviousStart, classInsightPreviousEnd, db.students, db.tasks, db.logs, db.dailyCheckIns]
+  );
   const dashboardForgottenItems = useMemo(
     () => (db.forgottenItems || []).filter(item => item.date >= dashboardStart && item.date <= dashboardEnd),
     [db.forgottenItems, dashboardStart, dashboardEnd]
@@ -689,6 +703,14 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
   const dueSupportActions = useMemo(
     () => activeSupportActions.filter(item => item.followUpDate && item.followUpDate <= todayStrForDash),
     [activeSupportActions, todayStrForDash]
+  );
+  const activeClassActions = useMemo(
+    () => (db.classActions || []).filter(item => item.status !== '完了'),
+    [db.classActions]
+  );
+  const dueClassActions = useMemo(
+    () => activeClassActions.filter(item => item.reviewDate && item.reviewDate <= todayStrForDash),
+    [activeClassActions, todayStrForDash]
   );
 
   // 🚀 【最適化】1日表示用のデータをメモ化
@@ -1049,6 +1071,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
           db.setDailyCheckIns(migrated.dailyCheckIns);
           db.setForgottenItems(migrated.forgottenItems);
           db.setSupportActions(migrated.supportActions);
+          db.setClassActions(migrated.classActions);
           db.setSchemaVersion(migrated.schemaVersion);
           showToast('データを復元しました');
         }
@@ -1059,11 +1082,11 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
   };
 
   const handleYearlyReset = () => {
-    const inputPin = window.prompt('【⚠️警告：データの初期化】\n新年度に向けて「名簿」「課題ルール」「提出記録」をすべて完全に削除します。\n（※実行前に必ず「バックアップを保存」してください）\n\n本当に初期化する場合は、先生用PINコードを入力してください。');
+    const inputPin = window.prompt('【⚠️警告：データの初期化】\n新年度に向けて、名簿・課題・提出・きもち・出欠・忘れ物・児童支援・学級改善の記録をすべて完全に削除します。\n（※実行前に必ず「バックアップを保存」してください）\n\n本当に初期化する場合は、先生用PINコードを入力してください。');
     if (inputPin === null) return;
     if (inputPin === db.config.pin) {
       db.setStudents([]); db.setTasks([]); db.setLogs([]); db.setAbsences([]);
-      db.setDailyCheckIns([]); db.setForgottenItems([]); db.setSupportActions([]);
+      db.setDailyCheckIns([]); db.setForgottenItems([]); db.setSupportActions([]); db.setClassActions([]);
       showToast('データを初期化し、新年度の準備が完了しました');
     } else {
       showToast('PINコードが違うため初期化をキャンセルしました', 'error');
@@ -1109,6 +1132,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
       <div className="flex overflow-x-auto p-4 gap-2 bg-white border-b border-slate-200 flex-shrink-0 hide-scrollbar">
         {[
           { id: 'dashboard', icon: <Activity size={16}/>, label: 'ダッシュボード' },
+          { id: 'class-insights', icon: <Sparkles size={16}/>, label: '学級改善' },
           { id: 'forgotten', icon: <Backpack size={16}/>, label: '忘れ物・準備' },
           { id: 'support', icon: <HandHeart size={16}/>, label: '児童支援' },
           { id: 'students', icon: <Users size={16}/>, label: '名簿管理' },
@@ -1146,7 +1170,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
                 <h3 className="text-sm font-bold text-slate-400 mb-2">{isSingleDay ? '対象日のアクション率' : '指定期間の課題提出率'}</h3>
                 <div className="flex items-end gap-2 mb-2">
@@ -1186,6 +1210,14 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
                   <span className="text-sm text-slate-400 font-bold mb-1">件</span>
                 </div>
                 <p className={`text-xs font-bold mt-3 ${dueSupportActions.length > 0 ? 'text-red-500' : 'text-slate-500 group-hover:text-indigo-500'}`}>{dueSupportActions.length > 0 ? `振り返り期限 ${dueSupportActions.length}件` : '支援ボードを開く →'}</p>
+              </button>
+              <button type="button" onClick={() => setActiveTab('class-insights')} className="bg-gradient-to-br from-teal-600 to-cyan-600 rounded-2xl p-5 shadow-sm text-left text-white hover:shadow-md transition-all group">
+                <h3 className="text-sm font-bold text-cyan-100 mb-3 flex items-center gap-2"><Sparkles size={16} /> 学級改善プラン</h3>
+                <div className="flex items-end gap-2">
+                  <span className="text-4xl font-bold">{activeClassActions.length}</span>
+                  <span className="text-sm text-cyan-100 font-bold mb-1">件実施中</span>
+                </div>
+                <p className={`text-xs font-bold mt-3 ${dueClassActions.length > 0 ? 'text-amber-200' : 'text-cyan-100'}`}>{dueClassActions.length > 0 ? `振り返り時期 ${dueClassActions.length}件` : 'インサイトを確認 →'}</p>
               </button>
             </div>
 
@@ -1367,6 +1399,20 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
               </div>
             </div>
           </div>
+        )}
+
+        {activeTab === 'class-insights' && (
+          <ClassInsightsPanel
+            db={db}
+            showToast={showToast}
+            today={todayStrForDash}
+            currentStart={classInsightCurrentStart}
+            currentEnd={classInsightCurrentEnd}
+            previousStart={classInsightPreviousStart}
+            previousEnd={classInsightPreviousEnd}
+            currentReports={classInsightCurrentReports}
+            previousReports={classInsightPreviousReports}
+          />
         )}
 
         {activeTab === 'forgotten' && (
@@ -1886,6 +1932,7 @@ export default function App() {
   const [dailyCheckIns, setDailyCheckIns] = useLocalStorage('hp_daily_checkins', []);
   const [forgottenItems, setForgottenItems] = useLocalStorage('hp_forgotten_items', []);
   const [supportActions, setSupportActions] = useLocalStorage('hp_support_actions', []);
+  const [classActions, setClassActions] = useLocalStorage('hp_class_actions', []);
   const [schemaVersion, setSchemaVersion] = useLocalStorage('hp_schema_version', 1);
 
   // ☁️ Googleドライブ同期の設定（クライアントID・自動同期のON/OFF）
@@ -1901,20 +1948,22 @@ export default function App() {
     dailyCheckIns, setDailyCheckIns,
     forgottenItems, setForgottenItems,
     supportActions, setSupportActions,
+    classActions, setClassActions,
     schemaVersion, setSchemaVersion,
-  }), [students, setStudents, tasks, setTasks, logs, setLogs, config, setConfig, absences, setAbsences, dailyCheckIns, setDailyCheckIns, forgottenItems, setForgottenItems, supportActions, setSupportActions, schemaVersion, setSchemaVersion]);
+  }), [students, setStudents, tasks, setTasks, logs, setLogs, config, setConfig, absences, setAbsences, dailyCheckIns, setDailyCheckIns, forgottenItems, setForgottenItems, supportActions, setSupportActions, classActions, setClassActions, schemaVersion, setSchemaVersion]);
 
   // v1の提出ログ内に重複保存されていた「きもち」を、独立した日次チェックインへ安全に移行する。
   useEffect(() => {
     if (Number(schemaVersion) >= DATA_SCHEMA_VERSION) return;
-    const migrated = migrateData({ students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions });
+    const migrated = migrateData({ students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions, classActions });
     setTasks(migrated.tasks);
     setLogs(migrated.logs);
     setDailyCheckIns(migrated.dailyCheckIns);
     setForgottenItems(migrated.forgottenItems);
     setSupportActions(migrated.supportActions);
+    setClassActions(migrated.classActions);
     setSchemaVersion(migrated.schemaVersion);
-  }, [schemaVersion, students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions, setTasks, setLogs, setDailyCheckIns, setForgottenItems, setSupportActions, setSchemaVersion]);
+  }, [schemaVersion, students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions, classActions, setTasks, setLogs, setDailyCheckIns, setForgottenItems, setSupportActions, setClassActions, setSchemaVersion]);
 
   const showToastMsg = useCallback((msg, type = 'success') => setToast({ message: msg, type }), []);
 
