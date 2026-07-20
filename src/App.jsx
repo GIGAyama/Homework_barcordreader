@@ -5,8 +5,10 @@ import ForgottenItemsPanel from './ForgottenItemsPanel';
 import StudentSupportPanel from './StudentSupportPanel';
 import ClassInsightsPanel from './ClassInsightsPanel';
 import FamilyEngagementPanel from './FamilyEngagementPanel';
+import OperationsCenterPanel from './OperationsCenterPanel';
 import { buildStudentReportInsights } from './reportInsights';
 import { shiftDate } from './studentInsights';
+import { isTaskDueOn } from './taskSchedule';
 import {
   DATA_SCHEMA_VERSION,
   buildBackupData,
@@ -89,8 +91,6 @@ const getLocalDateString = (d = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
-const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
-
 // ⚠️ new Date('YYYY-MM-DD') はUTC深夜として解釈され日付がずれる環境があるため、必ずローカル時刻で組み立てる
 const parseLocalDate = (str) => {
   const [y, m, d] = str.split('-').map(Number);
@@ -106,20 +106,6 @@ const getWeekRangeStrs = (dateStr) => {
   const sun = new Date(mon);
   sun.setDate(mon.getDate() + 6);
   return [getLocalDateString(mon), getLocalDateString(sun)];
-};
-
-// 📌 課題ルールが指定日に「提出対象」かどうかの一元判定
-//   - おやすみ日（excludeDates）に登録された日は対象外
-//   - 削除（アーカイブ）された課題は、削除日以降は対象外（過去の記録・集計は保持）
-const isTaskDueOn = (task, dateStr) => {
-  if ((task.excludeDates || []).includes(dateStr)) return false;
-  if (task.archived && (!task.archivedAt || dateStr >= task.archivedAt)) return false;
-  const day = parseLocalDate(dateStr).getDay();
-  if (task.type === '毎日（平日）') return day >= 1 && day <= 5;
-  if (task.type === '曜日固定') return task.value === DAY_NAMES[day];
-  if (task.type === '日付指定') return task.value === dateStr;
-  if (task.type === '週回数') return true;
-  return false;
 };
 
 // ==========================================
@@ -1138,6 +1124,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
       <div className="flex overflow-x-auto p-4 gap-2 bg-white border-b border-slate-200 flex-shrink-0 hide-scrollbar">
         {[
           { id: 'dashboard', icon: <Activity size={16}/>, label: 'ダッシュボード' },
+          { id: 'operations', icon: <Clock size={16}/>, label: '今日の校務' },
           { id: 'class-insights', icon: <Sparkles size={16}/>, label: '学級改善' },
           { id: 'forgotten', icon: <Backpack size={16}/>, label: '忘れ物・準備' },
           { id: 'support', icon: <HandHeart size={16}/>, label: '児童支援' },
@@ -1413,6 +1400,10 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
               </div>
             </div>
           </div>
+        )}
+
+        {activeTab === 'operations' && (
+          <OperationsCenterPanel db={db} today={todayStrForDash} onNavigate={setActiveTab} showToast={showToast} />
         )}
 
         {activeTab === 'class-insights' && (
