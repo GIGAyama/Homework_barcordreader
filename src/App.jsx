@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Mailbox, Settings, Trash2, CheckCircle2, Circle, X, Users, Activity, Plus, Check, HeartPulse, ShieldAlert, Printer, FileText, Smile, Moon, Zap, CloudRain, PartyPopper, Sparkles, GraduationCap, ClipboardList, CalendarRange, Database, Download, Upload, AlertTriangle, RefreshCw, Pencil, Save, UserCheck, UserX, Clock, PlusCircle, MinusCircle, CalendarOff, Archive, ArchiveRestore, Cloud, CloudUpload, CloudDownload, Link2, Unlink, Loader2, KeyRound, ExternalLink, Backpack } from 'lucide-react';
+import { Mailbox, Settings, Trash2, CheckCircle2, Circle, X, Users, Activity, Plus, Check, HeartPulse, ShieldAlert, Printer, FileText, Smile, Moon, Zap, CloudRain, PartyPopper, Sparkles, GraduationCap, ClipboardList, CalendarRange, Database, Download, Upload, AlertTriangle, RefreshCw, Pencil, Save, UserCheck, UserX, Clock, PlusCircle, MinusCircle, CalendarOff, Archive, ArchiveRestore, Cloud, CloudUpload, CloudDownload, Link2, Unlink, Loader2, KeyRound, ExternalLink, Backpack, HandHeart } from 'lucide-react';
 import { useGoogleDriveSync } from './useGoogleDriveSync';
 import ForgottenItemsPanel from './ForgottenItemsPanel';
+import StudentSupportPanel from './StudentSupportPanel';
 import {
   DATA_SCHEMA_VERSION,
   buildBackupData,
@@ -519,6 +520,14 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
     () => new Set(dashboardForgottenItems.map(item => item.studentId)).size,
     [dashboardForgottenItems]
   );
+  const activeSupportActions = useMemo(
+    () => (db.supportActions || []).filter(item => item.status !== '完了'),
+    [db.supportActions]
+  );
+  const dueSupportActions = useMemo(
+    () => activeSupportActions.filter(item => item.followUpDate && item.followUpDate <= todayStrForDash),
+    [activeSupportActions, todayStrForDash]
+  );
 
   // 🚀 【最適化】1日表示用のデータをメモ化
   const { singleDayData, singleDaySubmitRate, singleDayFeelingCounts, actedStudentsCount, singleDayAttendance } = useMemo(() => {
@@ -918,6 +927,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
         {[
           { id: 'dashboard', icon: <Activity size={16}/>, label: 'ダッシュボード' },
           { id: 'forgotten', icon: <Backpack size={16}/>, label: '忘れ物・準備' },
+          { id: 'support', icon: <HandHeart size={16}/>, label: '児童支援' },
           { id: 'students', icon: <Users size={16}/>, label: '名簿管理' },
           { id: 'tasks', icon: <CheckCircle2 size={16}/>, label: '課題ルール' },
           { id: 'report', icon: <Printer size={16}/>, label: 'レポート印刷' },
@@ -953,7 +963,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
                 <h3 className="text-sm font-bold text-slate-400 mb-2">{isSingleDay ? '対象日のアクション率' : '指定期間の課題提出率'}</h3>
                 <div className="flex items-end gap-2 mb-2">
@@ -985,6 +995,14 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
                   <span className="text-sm text-slate-400 font-bold mb-1">件 / {dashboardForgottenStudents}名</span>
                 </div>
                 <p className="text-xs text-slate-500 font-bold mt-3 group-hover:text-red-500 transition-colors">クリックして記録・分析を開く →</p>
+              </button>
+              <button type="button" onClick={() => setActiveTab('support')} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 text-left hover:border-indigo-200 hover:shadow-md transition-all group">
+                <h3 className="text-sm font-bold text-slate-400 mb-3 flex items-center gap-2"><HandHeart size={16} className="text-indigo-500" /> 実施中の支援</h3>
+                <div className="flex items-end gap-2">
+                  <span className="text-4xl font-bold text-slate-800">{activeSupportActions.length}</span>
+                  <span className="text-sm text-slate-400 font-bold mb-1">件</span>
+                </div>
+                <p className={`text-xs font-bold mt-3 ${dueSupportActions.length > 0 ? 'text-red-500' : 'text-slate-500 group-hover:text-indigo-500'}`}>{dueSupportActions.length > 0 ? `振り返り期限 ${dueSupportActions.length}件` : '支援ボードを開く →'}</p>
               </button>
             </div>
 
@@ -1175,6 +1193,10 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
             setRecords={db.setForgottenItems}
             showToast={showToast}
           />
+        )}
+
+        {activeTab === 'support' && (
+          <StudentSupportPanel db={db} showToast={showToast} />
         )}
 
         {activeTab === 'students' && (
