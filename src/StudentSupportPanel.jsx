@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Activity,
   AlertCircle,
+  ArrowRight,
   Backpack,
   CalendarCheck,
   CheckCircle2,
@@ -20,6 +22,7 @@ import {
 } from 'lucide-react';
 import { createSupportAction, recordSupportOutcome } from './dataModel';
 import { buildStudentTimeline, buildSupportSignals, shiftDate, summarizeStudent } from './studentInsights';
+import { buildSupportImpact } from './supportImpact';
 
 const getLocalDateString = (date = new Date()) => {
   const year = date.getFullYear();
@@ -119,6 +122,18 @@ export default function StudentSupportPanel({ db, showToast }) {
     supportActions: db.supportActions,
     familyContacts: db.familyContacts,
   }) : [], [selectedStudent, db.logs, db.tasks, db.dailyCheckIns, db.forgottenItems, db.absences, db.supportActions, db.familyContacts]);
+  const supportImpacts = useMemo(() => selectedSupports.map(support => ({
+    support,
+    impact: buildSupportImpact({
+      support,
+      today,
+      tasks: db.tasks,
+      logs: db.logs,
+      dailyCheckIns: db.dailyCheckIns,
+      forgottenItems: db.forgottenItems,
+      absences: db.absences,
+    }),
+  })), [selectedSupports, today, db.tasks, db.logs, db.dailyCheckIns, db.forgottenItems, db.absences]);
 
   const updateForm = patch => setForm(previous => ({ ...previous, ...patch }));
 
@@ -231,6 +246,7 @@ export default function StudentSupportPanel({ db, showToast }) {
             {[
               { id: 'overview', label: '概要', Icon: Lightbulb },
               { id: 'plan', label: '支援を記録', Icon: HandHeart },
+              { id: 'impact', label: '効果レビュー', Icon: Activity },
               { id: 'timeline', label: 'タイムライン', Icon: FileClock },
             ].map(item => (
               <button key={item.id} type="button" onClick={() => setViewMode(item.id)} className={`flex-1 min-w-32 px-4 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all ${viewMode === item.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}>
@@ -346,6 +362,58 @@ export default function StudentSupportPanel({ db, showToast }) {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {viewMode === 'impact' && (
+            <div className="space-y-4">
+              <div className="bg-gradient-to-r from-indigo-50 to-cyan-50 border border-indigo-100 rounded-2xl p-5">
+                <h5 className="font-bold text-indigo-900 flex items-center gap-2"><Activity size={19} /> 支援前後の記録比較</h5>
+                <p className="text-xs text-indigo-700 mt-2 leading-relaxed">支援開始後の日数と同じ日数を開始前から取り、最大14日ずつ比較します。変化は支援との因果関係を断定するものではありません。</p>
+              </div>
+
+              {supportImpacts.length === 0 ? (
+                <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-10 text-center">
+                  <Activity size={38} className="mx-auto text-slate-300 mb-3" />
+                  <p className="font-bold text-slate-500">比較できる支援記録はまだありません</p>
+                  <button type="button" onClick={() => setViewMode('plan')} className="text-sm font-bold text-indigo-600 mt-3">支援を記録する →</button>
+                </div>
+              ) : supportImpacts.map(({ support, impact }) => (
+                <article key={support.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap"><span className="text-xs font-bold bg-indigo-50 text-indigo-600 px-2 py-1 rounded-full">{support.category}</span><span className={`text-xs font-bold px-2 py-1 rounded-full ${support.status === '完了' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{support.status}</span></div>
+                      <h5 className="font-bold text-slate-800 mt-3">{support.action}</h5>
+                      <p className="text-xs text-slate-500 mt-1">目標：{support.goal}</p>
+                    </div>
+                    {impact.available && <span className={`text-xs font-bold px-3 py-2 rounded-xl whitespace-nowrap ${impact.maturity === '比較可能' ? 'bg-cyan-50 text-cyan-700' : 'bg-slate-100 text-slate-500'}`}>{impact.daysCompared}日ずつ・{impact.maturity}</span>}
+                  </div>
+
+                  {!impact.available ? (
+                    <div className="p-6 text-sm font-bold text-slate-500">{impact.reason}</div>
+                  ) : (
+                    <div className="p-5">
+                      <div className="flex items-center justify-center gap-3 text-xs font-bold text-slate-500 bg-slate-50 border border-slate-100 rounded-xl p-3 mb-4">
+                        <span>{impact.periods.before.start}〜{impact.periods.before.end}</span><ArrowRight size={16} className="text-indigo-400" /><span>{impact.periods.after.start}〜{impact.periods.after.end}</span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {impact.metrics.map((metric, index) => (
+                          <div key={metric.key} className={`rounded-xl border p-4 ${index === 0 ? 'border-indigo-200 bg-indigo-50/50' : 'border-slate-100 bg-slate-50/60'}`}>
+                            <div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-slate-600">{metric.label}</span>{index === 0 && <span className="text-[10px] font-bold text-indigo-600 bg-white px-2 py-1 rounded-full">支援分類に関連</span>}</div>
+                            <div className="flex items-center gap-3 mt-3"><div><span className="text-[10px] text-slate-400 font-bold">支援前</span><p className="text-2xl font-bold text-slate-700">{metric.beforeDisplay}</p></div><ArrowRight size={18} className="text-slate-300" /><div><span className="text-[10px] text-slate-400 font-bold">支援後</span><p className="text-2xl font-bold text-slate-900">{metric.afterDisplay}</p></div></div>
+                            <p className={`text-xs font-bold mt-3 ${metric.favorable === true ? 'text-emerald-700' : metric.favorable === false ? 'text-amber-700' : 'text-slate-500'}`}>{metric.summary}</p>
+                            <p className="text-[10px] text-slate-400 mt-1">{metric.note}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {impact.daysCompared < 7 && <div className="mt-4 bg-amber-50 border border-amber-100 text-amber-800 rounded-xl p-3 text-xs font-bold">比較期間が短いため、7日以上記録してから再確認することをおすすめします。</div>}
+                      {support.outcome && <div className="mt-4 bg-emerald-50 border border-emerald-100 rounded-xl p-4"><span className="text-xs font-bold text-emerald-700">先生が記録した結果：{support.outcomeRating}</span><p className="text-sm font-bold text-emerald-900 mt-1">{support.outcome}</p></div>}
+                      <p className="text-[10px] text-slate-400 mt-4 leading-relaxed">{impact.disclaimer}</p>
+                      {support.status !== '完了' && <button type="button" onClick={() => setViewMode('plan')} className="mt-3 text-xs font-bold text-indigo-600 hover:text-indigo-500">この支援の結果を記録する →</button>}
+                    </div>
+                  )}
+                </article>
+              ))}
             </div>
           )}
 
