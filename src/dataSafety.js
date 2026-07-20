@@ -10,6 +10,7 @@ export const BACKUP_COLLECTIONS = [
   ['supportActions', '児童支援'],
   ['classActions', '学級改善'],
   ['familyContacts', '家庭連携'],
+  ['aiActivity', 'AI利用履歴'],
 ];
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -194,6 +195,7 @@ export const applyBackupToDb = (db, source) => {
   db.setSupportActions(data.supportActions);
   db.setClassActions(data.classActions);
   db.setFamilyContacts(data.familyContacts);
+  db.setAiActivity(data.aiActivity);
   db.setSchemaVersion(data.schemaVersion);
   return data;
 };
