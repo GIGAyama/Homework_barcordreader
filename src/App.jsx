@@ -1,6 +1,17 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Mailbox, Settings, Trash2, CheckCircle2, Circle, X, Users, Activity, Plus, Check, HeartPulse, ShieldAlert, Printer, FileText, Smile, Moon, Zap, CloudRain, PartyPopper, Sparkles, GraduationCap, ClipboardList, CalendarRange, Database, Download, Upload, AlertTriangle, RefreshCw, Pencil, Save, UserCheck, UserX, Clock, PlusCircle, MinusCircle, CalendarOff, Archive, ArchiveRestore, Cloud, CloudUpload, CloudDownload, Link2, Unlink, Loader2, KeyRound, ExternalLink } from 'lucide-react';
+import { Mailbox, Settings, Trash2, CheckCircle2, Circle, X, Users, Activity, Plus, Check, HeartPulse, ShieldAlert, Printer, FileText, Smile, Moon, Zap, CloudRain, PartyPopper, Sparkles, GraduationCap, ClipboardList, CalendarRange, Database, Download, Upload, AlertTriangle, RefreshCw, Pencil, Save, UserCheck, UserX, Clock, PlusCircle, MinusCircle, CalendarOff, Archive, ArchiveRestore, Cloud, CloudUpload, CloudDownload, Link2, Unlink, Loader2, KeyRound, ExternalLink, Backpack } from 'lucide-react';
 import { useGoogleDriveSync } from './useGoogleDriveSync';
+import ForgottenItemsPanel from './ForgottenItemsPanel';
+import {
+  DATA_SCHEMA_VERSION,
+  buildBackupData,
+  createDailyCheckIn,
+  createSubmissionEvent,
+  isValidBackupData,
+  migrateData,
+  submissionMatchesTask,
+  upsertDailyCheckIn,
+} from './dataModel';
 
 // ==========================================
 // 🎨 グローバルスタイル設定 (CSS)
@@ -141,11 +152,11 @@ const useLocalStorage = (key, initialValue) => {
 // ==========================================
 // 削除（アーカイブ）済みの課題も含めて集計する。削除後の日付は必要回数に数えないため、
 // 「その課題が有効だった期間の必要回数」に対する提出率が正しく計算される。
-const generateReportData = (startDate, endDate, students, tasks, logs) => {
+const generateReportData = (startDate, endDate, students, tasks, logs, dailyCheckIns = []) => {
   const taskRequirements = {};
   // 課題ごとの「対象週」（週回数タイプ用）: その週に1日でも有効日があればカウント
   const taskActiveWeeks = {};
-  tasks.forEach(t => { taskRequirements[t.name] = 0; taskActiveWeeks[t.name] = new Set(); });
+  tasks.forEach(t => { taskRequirements[t.id] = 0; taskActiveWeeks[t.id] = new Set(); });
 
   const currentDate = parseLocalDate(startDate);
   const end = parseLocalDate(endDate);
@@ -157,9 +168,9 @@ const generateReportData = (startDate, endDate, students, tasks, logs) => {
     tasks.forEach(t => {
       if (!isTaskDueOn(t, dateStr)) return;
       if (t.type === '週回数') {
-        taskActiveWeeks[t.name].add(monStr);
+        taskActiveWeeks[t.id].add(monStr);
       } else {
-        taskRequirements[t.name]++;
+        taskRequirements[t.id]++;
       }
     });
 
@@ -168,7 +179,7 @@ const generateReportData = (startDate, endDate, students, tasks, logs) => {
 
   tasks.forEach(t => {
     if (t.type === '週回数') {
-      taskRequirements[t.name] += taskActiveWeeks[t.name].size * parseInt(t.value || 1, 10);
+      taskRequirements[t.id] += taskActiveWeeks[t.id].size * parseInt(t.value || 1, 10);
     }
   });
 
@@ -176,16 +187,18 @@ const generateReportData = (startDate, endDate, students, tasks, logs) => {
     const studentLogs = logs.filter(l => l.studentId === student.id && l.date >= startDate && l.date <= endDate);
 
     const taskStats = tasks.map(t => {
-      const required = taskRequirements[t.name] || 0;
-      const submitted = studentLogs.filter(l => l.taskName === t.name).length;
+      const required = taskRequirements[t.id] || 0;
+      const submitted = studentLogs.filter(log => submissionMatchesTask(log, t)).length;
       const unsubmitted = Math.max(0, required - submitted);
       const rate = required > 0 ? Math.round((submitted / required) * 100) : 0;
       return { name: t.name, required, submitted, unsubmitted, rate, archived: !!t.archived };
     }).filter(t => !t.archived || t.required > 0 || t.submitted > 0);
     
     const feelings = { 'げんき':0, 'ねむい':0, 'イライラ':0, 'かなしい':0 };
-    studentLogs.forEach(l => {
-      if (l.feeling && feelings[l.feeling] !== undefined) feelings[l.feeling]++;
+    dailyCheckIns
+      .filter(checkIn => checkIn.studentId === student.id && checkIn.date >= startDate && checkIn.date <= endDate)
+      .forEach(checkIn => {
+      if (checkIn.feeling && feelings[checkIn.feeling] !== undefined) feelings[checkIn.feeling]++;
     });
 
     return { student, taskStats, feelings };
@@ -410,9 +423,9 @@ const StudentTasksView = ({ student, tasks, onNext, onCancel }) => {
       </div>
       
       <div className="mt-auto flex flex-col gap-4 pb-4">
-        <button onClick={() => selected.length > 0 && onNext(tasks.filter(t => selected.includes(t.name)))} disabled={selected.length === 0} 
-          className={`py-4 rounded-xl font-bold text-lg transition-all duration-200 active:scale-95 ${selected.length > 0 ? 'bg-red-500 text-white shadow-md hover:bg-red-400' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
-          つぎへ
+        <button onClick={() => onNext(tasks.filter(t => selected.includes(t.name)))}
+          className="py-4 rounded-xl font-bold text-lg transition-all duration-200 active:scale-95 bg-red-500 text-white shadow-md hover:bg-red-400">
+          {selected.length > 0 ? 'つぎへ' : '提出なしで つぎへ'}
         </button>
         <button onClick={onCancel} className="py-3 text-slate-400 font-bold hover:text-slate-600 transition-colors">やめる</button>
       </div>
@@ -498,6 +511,14 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
   const [dashboardEnd, setDashboardEnd] = useState(todayStrForDash);
 
   const isSingleDay = dashboardStart === dashboardEnd;
+  const dashboardForgottenItems = useMemo(
+    () => (db.forgottenItems || []).filter(item => item.date >= dashboardStart && item.date <= dashboardEnd),
+    [db.forgottenItems, dashboardStart, dashboardEnd]
+  );
+  const dashboardForgottenStudents = useMemo(
+    () => new Set(dashboardForgottenItems.map(item => item.studentId)).size,
+    [dashboardForgottenItems]
+  );
 
   // 🚀 【最適化】1日表示用のデータをメモ化
   const { singleDayData, singleDaySubmitRate, singleDayFeelingCounts, actedStudentsCount, singleDayAttendance } = useMemo(() => {
@@ -511,11 +532,11 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
       const studentWeeklyLogs = db.logs.filter(l => l.studentId === student.id && l.date >= monStr && l.date <= sunStr);
 
       const activeTasks = db.tasks.filter(t => isTaskDueOn(t, dashboardStart)).map(t => {
-        const isDone = studentTargetLogs.some(l => l.taskName === t.name);
+        const isDone = studentTargetLogs.some(log => submissionMatchesTask(log, t));
         let weeklyCount = 0;
         let quotaReached = false;
         if (t.type === '週回数') {
-           weeklyCount = studentWeeklyLogs.filter(l => l.taskName === t.name).length;
+           weeklyCount = studentWeeklyLogs.filter(log => submissionMatchesTask(log, t)).length;
            quotaReached = weeklyCount >= parseInt(t.value || 1, 10);
         }
         return { ...t, done: isDone, weeklyCount, quotaReached };
@@ -524,8 +545,9 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
         return true;
       });
 
-      const sortedTargetLogs = [...studentTargetLogs].sort((a, b) => b.timestamp - a.timestamp);
-      const latestFeeling = sortedTargetLogs.find(l => l.feeling)?.feeling || null;
+      const latestFeeling = (db.dailyCheckIns || [])
+        .filter(checkIn => checkIn.date === dashboardStart && checkIn.studentId === student.id)
+        .sort((a, b) => b.timestamp - a.timestamp)[0]?.feeling || null;
       let feelingData = null;
       if (latestFeeling && FEELING_CONFIG[latestFeeling]) {
         const config = FEELING_CONFIG[latestFeeling];
@@ -538,7 +560,8 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
       const isPartial = completedTasksCount > 0 && completedTasksCount < totalTasksCount;
 
       // 🗓️ 出欠ステータスの自動判定
-      const hasLog = db.logs.some(l => l.date === dashboardStart && l.studentId === student.id);
+      const hasLog = db.logs.some(l => l.date === dashboardStart && l.studentId === student.id)
+        || (db.dailyCheckIns || []).some(checkIn => checkIn.date === dashboardStart && checkIn.studentId === student.id);
       let attendanceStatus = '未確認';
       if (hasLog) {
         attendanceStatus = '出席';
@@ -560,13 +583,13 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
     data.forEach(d => { attCounts[d.attendanceStatus] = (attCounts[d.attendanceStatus] || 0) + 1; });
 
     return { singleDayData: data, singleDaySubmitRate: rate, singleDayFeelingCounts: counts, actedStudentsCount: actedCount, singleDayAttendance: attCounts };
-  }, [dashboardStart, db.students, db.tasks, db.logs, db.absences, isSingleDay]);
+  }, [dashboardStart, db.students, db.tasks, db.logs, db.absences, db.dailyCheckIns, isSingleDay]);
 
   // 🚀 【最適化】複数日表示用のデータをメモ化
   const { multiDayData, multiSubmitRate, multiTotalRequired, multiTotalSubmitted, multiFeelingCounts } = useMemo(() => {
     if (isSingleDay) return { multiDayData: [], multiSubmitRate: 0, multiTotalRequired: 0, multiTotalSubmitted: 0, multiFeelingCounts: {} };
     
-    const data = generateReportData(dashboardStart, dashboardEnd, db.students, db.tasks, db.logs);
+    const data = generateReportData(dashboardStart, dashboardEnd, db.students, db.tasks, db.logs, db.dailyCheckIns);
     let rate = 0, req = 0, sub = 0;
     const counts = { 'げんき': 0, 'ねむい': 0, 'イライラ': 0, 'かなしい': 0 };
     
@@ -577,7 +600,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
     rate = req > 0 ? Math.round((sub / req) * 100) : 0;
 
     return { multiDayData: data, multiSubmitRate: rate, multiTotalRequired: req, multiTotalSubmitted: sub, multiFeelingCounts: counts };
-  }, [dashboardStart, dashboardEnd, db.students, db.tasks, db.logs, isSingleDay]);
+  }, [dashboardStart, dashboardEnd, db.students, db.tasks, db.logs, db.dailyCheckIns, isSingleDay]);
 
 
   // ==========================================
@@ -585,7 +608,8 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
   // ==========================================
   const handleMarkAbsence = useCallback((studentId, studentName, status) => {
     // すでにログ（チェックイン済み）があれば上書きしない
-    const hasLog = db.logs.some(l => l.date === dashboardStart && l.studentId === studentId);
+    const hasLog = db.logs.some(l => l.date === dashboardStart && l.studentId === studentId)
+      || (db.dailyCheckIns || []).some(checkIn => checkIn.date === dashboardStart && checkIn.studentId === studentId);
     if (hasLog) {
       showToast(`${studentName} さんはチェックイン済みのため変更できません`, 'error');
       return;
@@ -610,25 +634,20 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
   // 📝 提出記録の管理ハンドラ
   // ==========================================
   const handleAddManualSubmission = useCallback((studentId, studentName, taskName, dateStr) => {
-    const alreadyDone = db.logs.some(l => l.date === dateStr && l.studentId === studentId && l.taskName === taskName);
+    const task = db.tasks.find(item => item.name === taskName);
+    const student = db.students.find(item => item.id === studentId);
+    if (!task || !student) { showToast('児童または課題が見つかりません', 'error'); return; }
+    const alreadyDone = db.logs.some(log => log.date === dateStr && log.studentId === studentId && submissionMatchesTask(log, task));
     if (alreadyDone) { showToast('すでに提出記録があります', 'error'); return; }
-    const newLog = {
-      id: Math.random().toString(36).substr(2, 9),
-      date: dateStr,
-      studentId,
-      studentName,
-      taskName,
-      feeling: null,
-      timestamp: Date.now(),
-      isManual: true
-    };
+    const newLog = createSubmissionEvent({ student: { ...student, name: studentName }, task, date: dateStr, isManual: true });
     db.setLogs(prev => [...prev, newLog]);
     showToast(`「${taskName}」を提出済みに記録しました`);
   }, [db, showToast]);
 
   const handleRemoveSubmission = useCallback((studentId, taskName, dateStr) => {
     if (!window.confirm(`「${taskName}」の提出記録を取り消しますか？`)) return;
-    db.setLogs(prev => prev.filter(l => !(l.date === dateStr && l.studentId === studentId && l.taskName === taskName)));
+    const task = db.tasks.find(item => item.name === taskName);
+    db.setLogs(prev => prev.filter(log => !(log.date === dateStr && log.studentId === studentId && (!task || submissionMatchesTask(log, task)))));
     showToast(`「${taskName}」の提出記録を取り消しました`);
   }, [db, showToast]);
 
@@ -707,6 +726,9 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
     // ログも更新
     const updatedLogs = db.logs.map(l => l.studentId === oldId ? { ...l, studentId: newId, studentName: newName } : l);
     db.setLogs(updatedLogs);
+    db.setDailyCheckIns(prev => prev.map(item => item.studentId === oldId ? { ...item, studentId: newId, studentName: newName } : item));
+    db.setForgottenItems(prev => prev.map(item => item.studentId === oldId ? { ...item, studentId: newId, studentName: newName } : item));
+    db.setSupportActions(prev => prev.map(item => item.studentId === oldId ? { ...item, studentId: newId, studentName: newName } : item));
 
     setEditingStudentId(null);
     showToast('児童情報を更新しました');
@@ -829,11 +851,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
   };
 
   const handleExportData = () => {
-    const backupData = {
-      students: db.students, tasks: db.tasks, logs: db.logs, config: db.config,
-      absences: db.absences || [],
-      exportDate: new Date().toISOString()
-    };
+    const backupData = buildBackupData(db);
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData));
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute("href", dataStr);
@@ -851,11 +869,16 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
     reader.onload = (event) => {
       try {
         const importedData = JSON.parse(event.target.result);
-        if (!importedData.students || !importedData.tasks || !importedData.logs || !importedData.config) throw new Error('不正なファイル形式です');
+        if (!isValidBackupData(importedData)) throw new Error('不正なファイル形式です');
         if (window.confirm('⚠️現在のデータはすべて上書きされます。復元を実行しますか？')) {
-          db.setStudents(importedData.students); db.setTasks(importedData.tasks);
-          db.setLogs(importedData.logs); db.setConfig(importedData.config);
-          db.setAbsences(importedData.absences || []);
+          const migrated = migrateData(importedData);
+          db.setStudents(migrated.students); db.setTasks(migrated.tasks);
+          db.setLogs(migrated.logs); db.setConfig(migrated.config);
+          db.setAbsences(migrated.absences);
+          db.setDailyCheckIns(migrated.dailyCheckIns);
+          db.setForgottenItems(migrated.forgottenItems);
+          db.setSupportActions(migrated.supportActions);
+          db.setSchemaVersion(migrated.schemaVersion);
           showToast('データを復元しました');
         }
       } catch (error) { showToast('ファイルの読み込みに失敗しました', 'error'); }
@@ -869,6 +892,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
     if (inputPin === null) return;
     if (inputPin === db.config.pin) {
       db.setStudents([]); db.setTasks([]); db.setLogs([]); db.setAbsences([]);
+      db.setDailyCheckIns([]); db.setForgottenItems([]); db.setSupportActions([]);
       showToast('データを初期化し、新年度の準備が完了しました');
     } else {
       showToast('PINコードが違うため初期化をキャンセルしました', 'error');
@@ -876,7 +900,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
   };
 
   const handlePrintReport = () => {
-    const data = generateReportData(reportStartDate, reportEndDate, db.students, db.tasks, db.logs);
+    const data = generateReportData(reportStartDate, reportEndDate, db.students, db.tasks, db.logs, db.dailyCheckIns);
     onGenerateReport(data, { start: reportStartDate, end: reportEndDate });
     setTimeout(() => window.print(), 500);
   };
@@ -893,6 +917,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
       <div className="flex overflow-x-auto p-4 gap-2 bg-white border-b border-slate-200 flex-shrink-0 hide-scrollbar">
         {[
           { id: 'dashboard', icon: <Activity size={16}/>, label: 'ダッシュボード' },
+          { id: 'forgotten', icon: <Backpack size={16}/>, label: '忘れ物・準備' },
           { id: 'students', icon: <Users size={16}/>, label: '名簿管理' },
           { id: 'tasks', icon: <CheckCircle2 size={16}/>, label: '課題ルール' },
           { id: 'report', icon: <Printer size={16}/>, label: 'レポート印刷' },
@@ -928,7 +953,7 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
                 <h3 className="text-sm font-bold text-slate-400 mb-2">{isSingleDay ? '対象日のアクション率' : '指定期間の課題提出率'}</h3>
                 <div className="flex items-end gap-2 mb-2">
@@ -953,6 +978,14 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
                    })}
                  </div>
               </div>
+              <button type="button" onClick={() => setActiveTab('forgotten')} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 text-left hover:border-red-200 hover:shadow-md transition-all group">
+                <h3 className="text-sm font-bold text-slate-400 mb-3 flex items-center gap-2"><Backpack size={16} className="text-red-400" /> 忘れ物・学習準備</h3>
+                <div className="flex items-end gap-2">
+                  <span className="text-4xl font-bold text-slate-800">{dashboardForgottenItems.length}</span>
+                  <span className="text-sm text-slate-400 font-bold mb-1">件 / {dashboardForgottenStudents}名</span>
+                </div>
+                <p className="text-xs text-slate-500 font-bold mt-3 group-hover:text-red-500 transition-colors">クリックして記録・分析を開く →</p>
+              </button>
             </div>
 
             {/* 🗓️ 出欠サマリー（1日表示のみ） */}
@@ -1133,6 +1166,15 @@ const AdminView = ({ onClose, showToast, db, drive, onGenerateReport, isPrinting
               </div>
             </div>
           </div>
+        )}
+
+        {activeTab === 'forgotten' && (
+          <ForgottenItemsPanel
+            students={db.students}
+            records={db.forgottenItems || []}
+            setRecords={db.setForgottenItems}
+            showToast={showToast}
+          />
         )}
 
         {activeTab === 'students' && (
@@ -1584,12 +1626,38 @@ export default function App() {
   const [logs, setLogs] = useLocalStorage('hp_logs', []);
   const [config, setConfig] = useLocalStorage('hp_config', { pin: 'admin' });
   const [absences, setAbsences] = useLocalStorage('hp_absences', []);
+  const [dailyCheckIns, setDailyCheckIns] = useLocalStorage('hp_daily_checkins', []);
+  const [forgottenItems, setForgottenItems] = useLocalStorage('hp_forgotten_items', []);
+  const [supportActions, setSupportActions] = useLocalStorage('hp_support_actions', []);
+  const [schemaVersion, setSchemaVersion] = useLocalStorage('hp_schema_version', 1);
 
   // ☁️ Googleドライブ同期の設定（クライアントID・自動同期のON/OFF）
   const [driveClientId, setDriveClientId] = useLocalStorage('hp_gdrive_client_id', '');
   const [driveAutoSync, setDriveAutoSync] = useLocalStorage('hp_gdrive_autosync', false);
 
-  const db = useMemo(() => ({ students, setStudents, tasks, setTasks, logs, setLogs, config, setConfig, absences, setAbsences }), [students, setStudents, tasks, setTasks, logs, setLogs, config, setConfig, absences, setAbsences]);
+  const db = useMemo(() => ({
+    students, setStudents,
+    tasks, setTasks,
+    logs, setLogs,
+    config, setConfig,
+    absences, setAbsences,
+    dailyCheckIns, setDailyCheckIns,
+    forgottenItems, setForgottenItems,
+    supportActions, setSupportActions,
+    schemaVersion, setSchemaVersion,
+  }), [students, setStudents, tasks, setTasks, logs, setLogs, config, setConfig, absences, setAbsences, dailyCheckIns, setDailyCheckIns, forgottenItems, setForgottenItems, supportActions, setSupportActions, schemaVersion, setSchemaVersion]);
+
+  // v1の提出ログ内に重複保存されていた「きもち」を、独立した日次チェックインへ安全に移行する。
+  useEffect(() => {
+    if (Number(schemaVersion) >= DATA_SCHEMA_VERSION) return;
+    const migrated = migrateData({ students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions });
+    setTasks(migrated.tasks);
+    setLogs(migrated.logs);
+    setDailyCheckIns(migrated.dailyCheckIns);
+    setForgottenItems(migrated.forgottenItems);
+    setSupportActions(migrated.supportActions);
+    setSchemaVersion(migrated.schemaVersion);
+  }, [schemaVersion, students, tasks, logs, config, absences, dailyCheckIns, forgottenItems, supportActions, setTasks, setLogs, setDailyCheckIns, setForgottenItems, setSupportActions, setSchemaVersion]);
 
   const showToastMsg = useCallback((msg, type = 'success') => setToast({ message: msg, type }), []);
 
@@ -1613,11 +1681,11 @@ export default function App() {
     const studentWeeklyLogs = db.logs.filter(l => l.studentId === student.id && l.date >= monStr && l.date <= sunStr);
 
     const activeTasks = db.tasks.filter(t => isTaskDueOn(t, todayStr)).map(t => {
-      const isDone = studentTodayLogs.some(l => l.taskName === t.name);
+      const isDone = studentTodayLogs.some(log => submissionMatchesTask(log, t));
       let weeklyCount = 0;
       let quotaReached = false;
       if (t.type === '週回数') {
-         weeklyCount = studentWeeklyLogs.filter(l => l.taskName === t.name).length;
+         weeklyCount = studentWeeklyLogs.filter(log => submissionMatchesTask(log, t)).length;
          quotaReached = weeklyCount >= parseInt(t.value || 1, 10);
       }
       return { ...t, done: isDone, weeklyCount, quotaReached };
@@ -1639,16 +1707,19 @@ export default function App() {
   const handleFeelingSelect = useCallback((feeling) => {
     const todayStr = getLocalDateString(new Date());
     const timestamp = Date.now();
-    const newLogs = selectedTasks.map(t => ({
-      id: Math.random().toString(36).substr(2, 9),
+    const newLogs = selectedTasks.map(task => createSubmissionEvent({
+      student: currentStudent,
+      task,
       date: todayStr,
-      studentId: currentStudent.id,
-      studentName: currentStudent.name,
-      taskName: t.name,
-      feeling: feeling,
-      timestamp: timestamp
+      timestamp,
     }));
     db.setLogs(prev => [...prev, ...newLogs]);
+    db.setDailyCheckIns(prev => upsertDailyCheckIn(prev, createDailyCheckIn({
+      student: currentStudent,
+      date: todayStr,
+      feeling,
+      timestamp,
+    })));
     setView('complete');
   }, [selectedTasks, currentStudent, db]);
 
