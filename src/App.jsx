@@ -11,6 +11,7 @@ import TeacherAiPanel from './TeacherAiPanel';
 import { buildStudentReportInsights } from './reportInsights';
 import { shiftDate } from './studentInsights';
 import { isTaskDueOn, RECURRING_TASK_TYPES } from './taskSchedule';
+import { buildRestDaySuggestions, REST_DAY_RATE_THRESHOLD } from './restDaySuggestions';
 import {
   applyBackupToDb,
   buildRestorePreview,
@@ -662,10 +663,26 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
   const [periodEditData, setPeriodEditData] = useState({ startDate: '', endDate: '' });
   const [showArchivedTasks, setShowArchivedTasks] = useState(false);
 
+  // 🌙 おやすみ日の提案（提出率が全体の20%未満だった日）を開いている課題
+  const [restSuggestOpenTaskId, setRestSuggestOpenTaskId] = useState(null);
+  // 先生が「この日は必要だった」と却下したおやすみ提案（taskId::date のセット）
+  const [dismissedRestSuggestions, setDismissedRestSuggestions] = useState(() => new Set());
+
   // 日付の初期化
   const todayForDash = useMemo(() => new Date(), []);
   const todayStrForDash = useMemo(() => getLocalDateString(todayForDash), [todayForDash]);
-  
+
+  // 🌙 おやすみ日の提案：課題ごとに、提出率が全体（在籍児童）の20%未満だった日を洗い出す。
+  const restDaySuggestions = useMemo(
+    () => buildRestDaySuggestions(db.tasks, {
+      students: db.students,
+      logs: db.logs,
+      absences: db.absences,
+      today: todayStrForDash,
+    }),
+    [db.tasks, db.students, db.logs, db.absences, todayStrForDash]
+  );
+
   const [reportStartDate, setReportStartDate] = useState(() => getLocalDateString(new Date(todayForDash.getFullYear(), todayForDash.getMonth(), 1)));
   const [reportEndDate, setReportEndDate] = useState(() => getLocalDateString(new Date(todayForDash.getFullYear(), todayForDash.getMonth() + 1, 0)));
   const [reportTemplate, setReportTemplate] = useState('term');
@@ -1043,6 +1060,27 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
   const handleRemoveExcludeDate = (taskId, date) => {
     db.setTasks(prev => prev.map(t => t.id === taskId ? { ...t, excludeDates: (t.excludeDates || []).filter(d => d !== date) } : t));
     showToast(`${date} のおやすみ設定を取り消しました`);
+  };
+
+  // 🌙 提案されたおやすみ日を採用（複数日まとめて設定可能）
+  const handleAcceptRestSuggestions = (taskId, dates) => {
+    const addDates = Array.isArray(dates) ? dates : [dates];
+    if (addDates.length === 0) return;
+    db.setTasks(prev => prev.map(t => {
+      if (t.id !== taskId) return t;
+      const merged = new Set([...(t.excludeDates || []), ...addDates]);
+      return { ...t, excludeDates: [...merged].sort() };
+    }));
+    showToast(addDates.length === 1 ? `${addDates[0]} をおやすみ日にしました` : `${addDates.length}日をおやすみ日にしました`);
+  };
+
+  // 🌙 「この日は提出が必要だった」提案を却下する（次回以降は表示しない）
+  const handleDismissRestSuggestion = (taskId, date) => {
+    setDismissedRestSuggestions(prev => {
+      const next = new Set(prev);
+      next.add(`${taskId}::${date}`);
+      return next;
+    });
   };
 
   // 🗓️ 課題の有効期間（開始日・終了日）の編集。登録前の時期を提出率に含めないための設定。
@@ -1627,7 +1665,11 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
             
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 divide-y divide-slate-100">
               <div className="p-4 bg-slate-50 border-b border-slate-100 font-bold text-slate-700 text-sm">現在のルール</div>
-              {db.tasks.filter(t => !t.archived).map(t => (
+              {db.tasks.filter(t => !t.archived).map(t => {
+                // 🌙 この課題への「おやすみ日」提案（先生が却下した日は除く）
+                const taskRestSuggestions = (restDaySuggestions.byTaskId[t.id] || [])
+                  .filter(s => !dismissedRestSuggestions.has(`${t.id}::${s.date}`));
+                return (
                 <div key={t.id} className="p-4 hover:bg-slate-50 transition-colors">
                   <div className="flex justify-between items-center">
                     {editingTaskId === t.id ? (
@@ -1678,6 +1720,15 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                             className={`transition-all active:scale-90 p-2 rounded-full ${excludeEditTaskId === t.id ? 'text-amber-500 bg-amber-50' : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50'}`}>
                             <CalendarOff size={18} />
                           </button>
+                          {taskRestSuggestions.length > 0 && (
+                            <button
+                              onClick={() => setRestSuggestOpenTaskId(restSuggestOpenTaskId === t.id ? null : t.id)}
+                              title={`おやすみ日の提案が${taskRestSuggestions.length}件あります`}
+                              className={`relative transition-all active:scale-90 p-2 rounded-full ${restSuggestOpenTaskId === t.id ? 'text-indigo-500 bg-indigo-50' : 'text-indigo-400 hover:text-indigo-500 hover:bg-indigo-50'}`}>
+                              <Moon size={18} />
+                              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center bg-indigo-500 text-white text-[10px] font-bold rounded-full">{taskRestSuggestions.length}</span>
+                            </button>
+                          )}
                           <button onClick={() => startEditTask(t)} className="text-slate-400 hover:text-indigo-500 transition-all active:scale-90 p-2 rounded-full hover:bg-indigo-50">
                             <Pencil size={18} />
                           </button>
@@ -1716,6 +1767,47 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                     </div>
                   )}
 
+                  {/* 🌙 おやすみ日の提案：提出率が全体の20%未満だった日を自動で洗い出して提案する */}
+                  {restSuggestOpenTaskId === t.id && taskRestSuggestions.length > 0 && (
+                    <div className="mt-3 p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl animate-fade-in-up">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <p className="text-xs text-indigo-700 font-bold leading-relaxed">
+                          <Moon size={13} className="inline align-text-bottom mr-1" />
+                          提出率がクラス全体の{Math.round(REST_DAY_RATE_THRESHOLD * 100)}%未満だった日です。宿題を出さなかった日かもしれません。おやすみ日にすると、その日は提出率の必要回数に数えません。
+                        </p>
+                        <button
+                          onClick={() => handleAcceptRestSuggestions(t.id, taskRestSuggestions.map(s => s.date))}
+                          className="flex-shrink-0 px-3 py-1.5 bg-indigo-500 text-white rounded-lg text-xs font-bold hover:bg-indigo-400 transition-all active:scale-95 shadow-sm flex items-center gap-1">
+                          <Check size={14} /> すべておやすみ
+                        </button>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        {taskRestSuggestions.map(s => (
+                          <div key={s.date} className="flex items-center justify-between gap-2 bg-white border border-indigo-100 rounded-lg px-3 py-2">
+                            <div className="flex items-center gap-2 text-sm">
+                              <span className="font-bold text-slate-700">{s.date}</span>
+                              <span className="text-xs font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-md">提出 {s.submitted}/{s.expected}人・{Math.round(s.rate * 100)}%</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleAcceptRestSuggestions(t.id, s.date)}
+                                title="この日をおやすみ日にする"
+                                className="px-2.5 py-1 bg-amber-500 text-white rounded-lg text-xs font-bold hover:bg-amber-400 transition-all active:scale-95 flex items-center gap-1">
+                                <CalendarOff size={13} /> おやすみに
+                              </button>
+                              <button
+                                onClick={() => handleDismissRestSuggestion(t.id, s.date)}
+                                title="この日は提出が必要だった（提案を消す）"
+                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-90">
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* 🗓️ 課題の期間エディタ（開始日・終了日）。提出率を正しく集計するための有効期間設定。 */}
                   {periodEditTaskId === t.id && (
                     <div className="mt-3 p-3 bg-sky-50/60 border border-sky-200 rounded-xl animate-fade-in-up">
@@ -1743,7 +1835,8 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
               {db.tasks.filter(t => !t.archived).length === 0 && <div className="p-6 text-center text-slate-400 font-bold">ルールが設定されていません</div>}
             </div>
 
