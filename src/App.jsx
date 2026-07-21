@@ -10,7 +10,7 @@ import SafetySnapshotPanel from './SafetySnapshotPanel';
 import TeacherAiPanel from './TeacherAiPanel';
 import { buildStudentReportInsights } from './reportInsights';
 import { shiftDate } from './studentInsights';
-import { isTaskDueOn } from './taskSchedule';
+import { isTaskDueOn, RECURRING_TASK_TYPES } from './taskSchedule';
 import {
   applyBackupToDb,
   buildRestorePreview,
@@ -641,7 +641,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
   const [newStudent, setNewStudent] = useState({ id: '', name: '' });
   const [bulkStudents, setBulkStudents] = useState('');
   // デフォルトは「日付指定」＋今日の日付（そのまま単発課題をすぐ登録できる）
-  const [newTask, setNewTask] = useState(() => ({ type: '日付指定', value: getLocalDateString(), name: '' }));
+  const [newTask, setNewTask] = useState(() => ({ type: '日付指定', value: getLocalDateString(), name: '', startDate: getLocalDateString() }));
   const [newPin, setNewPin] = useState('');
   const fileInputRef = useRef(null);
 
@@ -658,6 +658,8 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
   // 🌟 おやすみ日（提出不要日）編集用ステート
   const [excludeEditTaskId, setExcludeEditTaskId] = useState(null);
   const [excludeDateInput, setExcludeDateInput] = useState(() => getLocalDateString());
+  const [periodEditTaskId, setPeriodEditTaskId] = useState(null);
+  const [periodEditData, setPeriodEditData] = useState({ startDate: '', endDate: '' });
   const [showArchivedTasks, setShowArchivedTasks] = useState(false);
 
   // 日付の初期化
@@ -956,8 +958,14 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
     if (newTask.type === '週回数' && !value) value = '1';
     if (newTask.type === '日付指定' && !value) return showToast('日付を選択してください', 'error');
 
-    db.setTasks(prev => [...prev, { id: Date.now().toString(), type: newTask.type, value, name, excludeDates: [] }]);
-    setNewTask({ type: '日付指定', value: getLocalDateString(), name: '' });
+    // 繰り返し課題は「開始日」を持たせ、登録前の時期を必要回数に数えないようにする。
+    // 既定は登録日（今日）だが、フォームで任意の開始日を指定できる。
+    const isRecurring = RECURRING_TASK_TYPES.includes(newTask.type);
+    const task = { id: Date.now().toString(), type: newTask.type, value, name, excludeDates: [] };
+    if (isRecurring) task.startDate = newTask.startDate || getLocalDateString();
+
+    db.setTasks(prev => [...prev, task]);
+    setNewTask({ type: '日付指定', value: getLocalDateString(), name: '', startDate: getLocalDateString() });
     showToast('課題ルールを追加しました');
   };
 
@@ -1035,6 +1043,41 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
   const handleRemoveExcludeDate = (taskId, date) => {
     db.setTasks(prev => prev.map(t => t.id === taskId ? { ...t, excludeDates: (t.excludeDates || []).filter(d => d !== date) } : t));
     showToast(`${date} のおやすみ設定を取り消しました`);
+  };
+
+  // 🗓️ 課題の有効期間（開始日・終了日）の編集。登録前の時期を提出率に含めないための設定。
+  const togglePeriodEditor = (task) => {
+    if (periodEditTaskId === task.id) { setPeriodEditTaskId(null); return; }
+    setPeriodEditTaskId(task.id);
+    setPeriodEditData({ startDate: task.startDate || '', endDate: task.endDate || '' });
+  };
+
+  const handleSavePeriod = (taskId) => {
+    const startDate = periodEditData.startDate || '';
+    const endDate = periodEditData.endDate || '';
+    if (startDate && endDate && startDate > endDate) {
+      return showToast('開始日は終了日より前にしてください', 'error');
+    }
+    db.setTasks(prev => prev.map(t => {
+      if (t.id !== taskId) return t;
+      const next = { ...t };
+      if (startDate) next.startDate = startDate; else delete next.startDate;
+      if (endDate) next.endDate = endDate; else delete next.endDate;
+      return next;
+    }));
+    setPeriodEditTaskId(null);
+    showToast('課題の期間を更新しました');
+  };
+
+  const handleClearPeriod = (taskId) => {
+    db.setTasks(prev => prev.map(t => {
+      if (t.id !== taskId) return t;
+      const { startDate: _s, endDate: _e, ...rest } = t;
+      return rest;
+    }));
+    setPeriodEditData({ startDate: '', endDate: '' });
+    setPeriodEditTaskId(null);
+    showToast('期間の設定を解除しました（全期間が対象になります）');
   };
 
   const handleChangePin = async (e) => {
@@ -1545,7 +1588,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                   const type = e.target.value;
                   // タイプ切り替え時に適切な初期値をセット（日付指定なら今日の日付）
                   const value = type === '日付指定' ? getLocalDateString() : type === '曜日固定' ? '月' : type === '週回数' ? '1' : '';
-                  setNewTask({ ...newTask, type, value });
+                  setNewTask({ ...newTask, type, value, startDate: newTask.startDate || getLocalDateString() });
                 }}
                 className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all">
                 <option value="日付指定">日付指定</option>
@@ -1567,6 +1610,14 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                   <span className="text-sm font-bold text-slate-600">週に</span>
                   <input type="number" min="1" max="7" value={newTask.value || '1'} onChange={e=>setNewTask({...newTask, value: e.target.value})} className="w-20 bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-center font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all" />
                   <span className="text-sm font-bold text-slate-600">回やる</span>
+                </div>
+              )}
+
+              {/* 🗓️ 繰り返し課題の開始日（既定は登録日）。これより前は必要回数に数えない。 */}
+              {RECURRING_TASK_TYPES.includes(newTask.type) && (
+                <div className="flex items-center gap-3 animate-fade-in-up">
+                  <span className="text-sm font-bold text-slate-600 flex items-center gap-1.5"><CalendarRange size={16} className="text-slate-400" />開始日</span>
+                  <DateInput value={newTask.startDate || getLocalDateString()} onChange={e=>setNewTask({...newTask, startDate: e.target.value})} className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all" />
                 </div>
               )}
 
@@ -1605,8 +1656,22 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                             {t.type} {t.value && `(${t.value})`}
                           </span>
                           <span className="font-bold text-slate-700">{t.name}</span>
+                          {(t.startDate || t.endDate) && (
+                            <span className="ml-2 inline-flex items-center gap-1 text-[11px] font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded-md border border-sky-100 align-middle">
+                              <CalendarRange size={12} />
+                              {t.startDate || '設定なし'} 〜 {t.endDate || '継続中'}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-1">
+                          {RECURRING_TASK_TYPES.includes(t.type) && (
+                            <button
+                              onClick={() => togglePeriodEditor(t)}
+                              title="課題の期間（開始日・終了日）を設定"
+                              className={`transition-all active:scale-90 p-2 rounded-full ${periodEditTaskId === t.id ? 'text-sky-500 bg-sky-50' : 'text-slate-400 hover:text-sky-500 hover:bg-sky-50'}`}>
+                              <CalendarRange size={18} />
+                            </button>
+                          )}
                           <button
                             onClick={() => { setExcludeEditTaskId(excludeEditTaskId === t.id ? null : t.id); setExcludeDateInput(getLocalDateString()); }}
                             title="おやすみ日（この日は提出不要）を設定"
@@ -1650,6 +1715,33 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                       </div>
                     </div>
                   )}
+
+                  {/* 🗓️ 課題の期間エディタ（開始日・終了日）。提出率を正しく集計するための有効期間設定。 */}
+                  {periodEditTaskId === t.id && (
+                    <div className="mt-3 p-3 bg-sky-50/60 border border-sky-200 rounded-xl animate-fade-in-up">
+                      <p className="text-xs text-sky-700 font-bold mb-2">課題を出していた「期間」を設定します。開始日より前・終了日より後は、提出率の必要回数に数えません。（空欄なら制限なし）</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label className="flex flex-col gap-1 text-xs font-bold text-sky-700">
+                          開始日（この日から）
+                          <DateInput value={periodEditData.startDate} onChange={e => setPeriodEditData({ ...periodEditData, startDate: e.target.value })} className="bg-white border border-sky-200 rounded-xl p-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-sky-400 transition-all" />
+                        </label>
+                        <label className="flex flex-col gap-1 text-xs font-bold text-sky-700">
+                          終了日（この日まで・任意）
+                          <DateInput value={periodEditData.endDate} onChange={e => setPeriodEditData({ ...periodEditData, endDate: e.target.value })} className="bg-white border border-sky-200 rounded-xl p-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-sky-400 transition-all" />
+                        </label>
+                      </div>
+                      <div className="flex items-center gap-2 mt-3">
+                        <button onClick={() => handleSavePeriod(t.id)} className="px-4 py-2 bg-sky-500 text-white rounded-xl text-sm font-bold hover:bg-sky-400 transition-all active:scale-95 shadow-sm flex items-center gap-1.5">
+                          <Save size={16} /> 期間を保存
+                        </button>
+                        {(t.startDate || t.endDate) && (
+                          <button onClick={() => handleClearPeriod(t.id)} className="px-4 py-2 bg-white text-sky-600 border border-sky-200 rounded-xl text-sm font-bold hover:bg-sky-50 transition-all active:scale-95 flex items-center gap-1.5">
+                            <X size={16} /> 期間の設定を解除
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
               {db.tasks.filter(t => !t.archived).length === 0 && <div className="p-6 text-center text-slate-400 font-bold">ルールが設定されていません</div>}
@@ -1671,6 +1763,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                             {t.type} {t.value && `(${t.value})`}
                           </span>
                           <span className="font-bold text-slate-500">{t.name}</span>
+                          {(t.startDate || t.endDate) && <span className="ml-2 text-xs text-slate-400">（{t.startDate || '〜'}〜{t.endDate || ''}）</span>}
                           {t.archivedAt && <span className="ml-2 text-xs text-slate-400">（{t.archivedAt} 終了）</span>}
                         </div>
                         <div className="flex items-center gap-1">
