@@ -1,5 +1,8 @@
 const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
 
+// 繰り返し発生する課題タイプ。開始日・終了日（有効期間）の設定対象。
+export const RECURRING_TASK_TYPES = ['毎日（平日）', '曜日固定', '週回数'];
+
 export const parseLocalDate = value => {
   const [year, month, day] = value.split('-').map(Number);
   return new Date(year, month - 1, day);
@@ -24,6 +27,10 @@ export const getWeekRangeStrings = dateString => {
 
 export const isTaskDueOn = (task, dateString) => {
   if ((task.excludeDates || []).includes(dateString)) return false;
+  // 課題の有効期間（任意設定）。開始日より前・終了日より後は「必要回数」に数えない。
+  // これにより、まだ課題を出していなかった時期が未提出として集計されるのを防ぐ。
+  if (task.startDate && dateString < task.startDate) return false;
+  if (task.endDate && dateString > task.endDate) return false;
   if (task.archived && (!task.archivedAt || dateString >= task.archivedAt)) return false;
   const day = parseLocalDate(dateString).getDay();
   if (task.type === '毎日（平日）') return day >= 1 && day <= 5;
