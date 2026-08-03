@@ -39,16 +39,16 @@ const resultAsText = result => {
 
 const AuditList = ({ items }) => (
   <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-    <h3 className="font-bold text-slate-800 flex items-center gap-2"><ShieldCheck size={18} className="text-emerald-600" /> AI利用履歴（内容は保存しません）</h3>
-    <p className="text-xs text-slate-500 mt-1">日時・機能・成否・モデル・参照件数だけをバックアップ対象として記録します。</p>
+    <h3 className="font-bold text-slate-800 flex items-center gap-2"><ShieldCheck size={18} className="text-emerald-700" /> AI利用履歴（内容は保存しません）</h3>
+    <p className="text-xs text-slate-600 mt-1">日時・機能・成否・モデル・参照件数だけをバックアップ対象として記録します。</p>
     <div className="mt-3 divide-y divide-slate-100">
       {(items || []).slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 10).map(item => (
         <div key={item.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
-          <div><span className="font-bold text-slate-700">{TASK_LABELS[item.task] || item.task}</span><span className="text-slate-400 ml-2">{new Date(item.createdAt).toLocaleString('ja-JP')}</span></div>
-          <span className={`font-bold px-2 py-1 rounded-full ${item.status === 'failed' ? 'bg-red-50 text-red-600' : item.status === 'copied' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-700'}`}>{item.status === 'generated' ? '生成' : item.status === 'copied' ? 'コピー' : '失敗'}</span>
+          <div><span className="font-bold text-slate-700">{TASK_LABELS[item.task] || item.task}</span><span className="text-slate-600 ml-2">{new Date(item.createdAt).toLocaleString('ja-JP')}</span></div>
+          <span className={`font-bold px-2 py-1 rounded-full ${item.status === 'failed' ? 'bg-red-50 text-red-700' : item.status === 'copied' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}`}>{item.status === 'generated' ? '生成' : item.status === 'copied' ? 'コピー' : '失敗'}</span>
         </div>
       ))}
-      {(items || []).length === 0 && <p className="py-4 text-sm text-slate-400">まだ利用履歴はありません。</p>}
+      {(items || []).length === 0 && <p className="py-4 text-sm text-slate-600">まだ利用履歴はありません。</p>}
     </div>
   </div>
 );
@@ -139,7 +139,7 @@ export default function TeacherAiPanel({ db, ai, showToast, today }) {
 
   return (
     <div className="space-y-4 animate-fade-in-up max-w-6xl mx-auto">
-      <div className="bg-gradient-to-br from-violet-700 via-indigo-700 to-blue-700 text-white rounded-3xl p-6 shadow-lg overflow-hidden relative">
+      <div className="bg-gradient-to-br from-violet-800 via-indigo-800 to-blue-800 text-white rounded-3xl p-6 shadow-lg overflow-hidden relative">
         <Sparkles className="absolute -right-5 -top-5 text-white/10" size={150} />
         <div className="relative">
           <div className="inline-flex items-center gap-2 bg-white/15 px-3 py-1.5 rounded-full text-xs font-bold mb-3"><Bot size={15} /> Gemini 教師支援</div>
@@ -161,7 +161,7 @@ export default function TeacherAiPanel({ db, ai, showToast, today }) {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {TASK_OPTIONS.map(option => (
                 <button key={option.id} type="button" onClick={() => changeTask(option.id)} className={`p-3 rounded-xl text-left border transition-all ${task === option.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-indigo-300'}`}>
-                  <span className="block font-bold text-sm">{option.label}</span><span className={`block text-[11px] leading-relaxed mt-1 ${task === option.id ? 'text-indigo-100' : 'text-slate-500'}`}>{option.description}</span>
+                  <span className="block font-bold text-sm">{option.label}</span><span className={`block text-[11px] leading-relaxed mt-1 ${task === option.id ? 'text-indigo-100' : 'text-slate-600'}`}>{option.description}</span>
                 </button>
               ))}
             </div>
@@ -180,14 +180,17 @@ export default function TeacherAiPanel({ db, ai, showToast, today }) {
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2"><Eye size={18} className="text-indigo-600" /> Geminiへ送る内容</h3>
+              <h3 className="font-bold text-slate-800 flex items-center gap-2"><Eye size={18} className="text-indigo-700" /> Geminiへ送る内容</h3>
               <div className="flex gap-2 text-[11px] font-bold"><span className={`px-2 py-1 rounded-full ${identifiers.length ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{identifiers.length ? '識別情報を検出・送信停止' : '実名なし'}</span><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-full">{(payloadBytes / 1024).toFixed(1)} KB</span><span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-full">参照 {payloadInfo.sourceRecordCount}件</span></div>
             </div>
             {payloadInfo.error ? <p className="p-5 text-sm font-bold text-amber-700 bg-amber-50">{payloadInfo.error}</p> : (
-              <pre className="p-4 bg-slate-950 text-slate-200 text-xs leading-relaxed overflow-auto max-h-80 whitespace-pre-wrap break-all">{JSON.stringify(payloadInfo.payload, null, 2)}</pre>
+              <pre className="p-4 bg-slate-950 text-slate-300 text-xs leading-relaxed overflow-auto max-h-80 whitespace-pre-wrap break-all">{JSON.stringify(payloadInfo.payload, null, 2)}</pre>
             )}
             <div className="p-4 bg-slate-50 border-t border-slate-100 space-y-3">
-              <label className="flex items-start gap-3 cursor-pointer"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} className="mt-1 accent-indigo-600" /><span className="text-sm font-bold text-slate-700">上記の送信内容に、不要な個人情報がないことを確認しました<span className="block text-xs font-normal text-slate-500 mt-1">生成結果は必ず根拠と照合し、教師が編集してから利用します。</span></span></label>
+              {/* チェックボックスそのものは 13px しかない。疑似要素で当たり判定を広げる手は
+                  input には効かない（中身を持てないため）ので、囲みのラベル側で
+                  最低 44px を確保する。ラベルのどこを押しても入る。 */}
+              <label className="flex min-h-[44px] items-start gap-3 py-1 cursor-pointer"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} className="mt-1 h-5 w-5 shrink-0 accent-indigo-600" /><span className="text-sm font-bold text-slate-700">上記の送信内容に、不要な個人情報がないことを確認しました<span className="block text-xs font-normal text-slate-600 mt-1">生成結果は必ず根拠と照合し、教師が編集してから利用します。</span></span></label>
               <button type="button" onClick={generate} disabled={loading || !payloadInfo.payload || identifiers.length > 0} className="w-full bg-indigo-600 disabled:bg-slate-300 text-white font-bold py-3.5 rounded-xl shadow-sm hover:bg-indigo-700 transition-all flex items-center justify-center gap-2">{loading ? <><Loader2 size={18} className="animate-spin" /> Geminiが整理しています</> : <><Send size={18} /> 確認した内容で下書きを作成</>}</button>
             </div>
           </div>
@@ -202,7 +205,7 @@ export default function TeacherAiPanel({ db, ai, showToast, today }) {
                     <label className="block text-xs font-bold text-slate-600">本文<textarea value={result.draft} onChange={event => setResult(previous => ({ ...previous, draft: event.target.value }))} rows={10} className="mt-1 w-full border border-slate-200 rounded-xl p-4 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-300" /></label>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                       {[['根拠', result.evidence_used], ['確認事項', result.cautions], ['次の行動案', result.suggested_next_steps]].map(([label, items]) => (
-                        <div key={label} className="bg-slate-50 border border-slate-100 rounded-xl p-3"><p className="font-bold text-slate-700 mb-2">{label}</p>{items.length ? <ul className="space-y-1 text-slate-600">{items.map((item, index) => <li key={`${label}-${index}`}>・{item}</li>)}</ul> : <p className="text-slate-400">なし</p>}</div>
+                        <div key={label} className="bg-slate-50 border border-slate-100 rounded-xl p-3"><p className="font-bold text-slate-700 mb-2">{label}</p>{items.length ? <ul className="space-y-1 text-slate-600">{items.map((item, index) => <li key={`${label}-${index}`}>・{item}</li>)}</ul> : <p className="text-slate-600">なし</p>}</div>
                       ))}
                     </div>
                   </>
@@ -210,7 +213,7 @@ export default function TeacherAiPanel({ db, ai, showToast, today }) {
                   <>
                     <label className="block text-xs font-bold text-slate-600">分類<select value={result.category} onChange={event => setResult(previous => ({ ...previous, category: event.target.value }))} className="mt-1 w-full border border-slate-200 rounded-xl p-3 text-sm bg-white">{['学習準備', '学習', '生活・体調', '友人関係', 'その他'].map(item => <option key={item}>{item}</option>)}</select></label>
                     {[['observation', '観察した事実'], ['action', '支援'], ['goal', '確認できる目標']].map(([key, label]) => <label key={key} className="block text-xs font-bold text-slate-600">{label}<textarea value={result[key]} onChange={event => setResult(previous => ({ ...previous, [key]: event.target.value }))} rows={3} className="mt-1 w-full border border-slate-200 rounded-xl p-3 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-300" /></label>)}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">{[['不足している情報', result.missing_information], ['確認事項', result.cautions]].map(([label, items]) => <div key={label} className="bg-slate-50 border border-slate-100 rounded-xl p-3"><p className="font-bold text-slate-700 mb-2">{label}</p>{items.length ? <ul className="space-y-1 text-slate-600">{items.map((item, index) => <li key={`${label}-${index}`}>・{item}</li>)}</ul> : <p className="text-slate-400">なし</p>}</div>)}</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">{[['不足している情報', result.missing_information], ['確認事項', result.cautions]].map(([label, items]) => <div key={label} className="bg-slate-50 border border-slate-100 rounded-xl p-3"><p className="font-bold text-slate-700 mb-2">{label}</p>{items.length ? <ul className="space-y-1 text-slate-600">{items.map((item, index) => <li key={`${label}-${index}`}>・{item}</li>)}</ul> : <p className="text-slate-600">なし</p>}</div>)}</div>
                   </>
                 )}
               </div>
@@ -221,13 +224,13 @@ export default function TeacherAiPanel({ db, ai, showToast, today }) {
 
         <div className="space-y-4">
           <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-            <h3 className="font-bold text-slate-800 flex items-center gap-2"><ServerCog size={18} className="text-indigo-600" /> 安全な接続設定</h3>
-            <p className="text-xs text-slate-500 mt-1 leading-relaxed">この設定は端末だけに保存され、データバックアップ・Google Drive同期には含まれません。</p>
-            <label className="block mt-4 text-xs font-bold text-slate-600">プロキシURL<div className="relative mt-1"><ServerCog size={16} className="absolute left-3 top-3 text-slate-400" /><input type="url" value={proxyInput} onChange={event => setProxyInput(event.target.value)} placeholder="https://...run.app" className="w-full border border-slate-200 rounded-xl py-2.5 pl-9 pr-3 text-sm" /></div></label>
-            <label className="block mt-3 text-xs font-bold text-slate-600">ゲートウェイトークン<div className="relative mt-1"><KeyRound size={16} className="absolute left-3 top-3 text-slate-400" /><input type="password" value={tokenInput} onChange={event => setTokenInput(event.target.value)} autoComplete="off" placeholder="24文字以上" className="w-full border border-slate-200 rounded-xl py-2.5 pl-9 pr-3 text-sm font-mono" /></div></label>
+            <h3 className="font-bold text-slate-800 flex items-center gap-2"><ServerCog size={18} className="text-indigo-700" /> 安全な接続設定</h3>
+            <p className="text-xs text-slate-600 mt-1 leading-relaxed">この設定は端末だけに保存され、データバックアップ・Google Drive同期には含まれません。</p>
+            <label className="block mt-4 text-xs font-bold text-slate-600">プロキシURL<div className="relative mt-1"><ServerCog size={16} className="absolute left-3 top-3 text-slate-600" /><input type="url" value={proxyInput} onChange={event => setProxyInput(event.target.value)} placeholder="https://...run.app" className="w-full border border-slate-200 rounded-xl py-2.5 pl-9 pr-3 text-sm" /></div></label>
+            <label className="block mt-3 text-xs font-bold text-slate-600">ゲートウェイトークン<div className="relative mt-1"><KeyRound size={16} className="absolute left-3 top-3 text-slate-600" /><input type="password" value={tokenInput} onChange={event => setTokenInput(event.target.value)} autoComplete="off" placeholder="24文字以上" className="w-full border border-slate-200 rounded-xl py-2.5 pl-9 pr-3 text-sm font-mono" /></div></label>
             <button type="button" onClick={saveSettings} className="mt-4 w-full bg-slate-800 text-white font-bold py-3 rounded-xl hover:bg-slate-700 flex items-center justify-center gap-2"><LockKeyhole size={17} /> この端末に保存</button>
-            <div className={`mt-3 rounded-xl p-3 text-xs font-bold flex gap-2 ${configured ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-50 text-slate-500'}`}><ShieldCheck size={16} /> {configured ? 'プロキシ設定済み（Gemini APIキーは端末にありません）' : '未設定'}</div>
-            {configured && <button type="button" onClick={() => { ai.setProxyUrl(''); ai.setGatewayToken(''); setProxyInput(''); setTokenInput(''); setResult(null); showToast('AI接続設定をこの端末から削除しました'); }} className="mt-3 w-full text-xs font-bold text-slate-400 hover:text-red-600 underline">この端末のAI接続設定を削除</button>}
+            <div className={`mt-3 rounded-xl p-3 text-xs font-bold flex gap-2 ${configured ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-50 text-slate-600'}`}><ShieldCheck size={16} /> {configured ? 'プロキシ設定済み（Gemini APIキーは端末にありません）' : '未設定'}</div>
+            {configured && <button type="button" onClick={() => { ai.setProxyUrl(''); ai.setGatewayToken(''); setProxyInput(''); setTokenInput(''); setResult(null); showToast('AI接続設定をこの端末から削除しました'); }} className="mt-3 w-full text-xs font-bold text-slate-600 hover:text-red-700 underline">この端末のAI接続設定を削除</button>}
           </div>
           <AuditList items={db.aiActivity} />
         </div>

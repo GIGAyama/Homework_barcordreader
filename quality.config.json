@@ -1,0 +1,63 @@
+{
+  "entryHtml": "index.html",
+  "requiredFiles": [
+    "index.html",
+    "vite.config.js",
+    "src/App.jsx",
+    "src/main.jsx",
+    "src/index.css",
+    "LICENSE",
+    "README.md",
+    "MANUAL.md"
+  ],
+  "ignoreDirectories": [
+    ".git",
+    ".github",
+    "node_modules",
+    "coverage",
+    "dist",
+    "dev-dist",
+    "server"
+  ],
+  "manifest": {
+    "forbiddenOauthScopes": [
+      "https://www.googleapis.com/auth/drive",
+      "https://mail.google.com/"
+    ]
+  },
+  "securityExceptions": {
+    "wildcardPostMessage": [],
+
+    "_xFrameAllowAll": "code.gs は Google Apps Script 版の実装で、現在このアプリでは使っていない（本番は Vite + React 版を GitHub Pages で配信している）。デプロイされないため ALLOWALL の実害は無い。ただし将来 GAS 版を再開するなら、その時点で SAMEORIGIN に直すこと。ファイル自体の扱いは AUDIT.md の『判断が要る点』に記録した。",
+    "xFrameAllowAll": ["code.gs"]
+  },
+  "maintainability": {
+    "warningLineCount": 5000,
+    "warningByteCount": 400000,
+
+    "_ignoreLargeFiles": "「1ファイルが大きすぎる」の警告は、人が保守するソースに向けたもの。npm が自動生成するロックファイルは対象外にする。",
+    "ignoreLargeFiles": [
+      "package-lock.json"
+    ]
+  },
+  "gigaV4": {
+    "enabled": true,
+
+    "_basePath": "gigayama.github.io は多数のアプリが同一オリジンを共有している。manifest の id / scope / start_url がここから外れると、別アプリと取り違えられて『開いたら違うアプリが立ち上がる』事故が起きる。",
+    "basePath": "/Homework_barcordreader/",
+
+    "_assetLimits": "画像の上限バイト数。アイコンだけで初回転送を占有しないための歯止め。",
+    "assetLimits": {
+      "default": 153600,
+      "favicon.png": 30720,
+      "icon-512.png": 61440,
+      "icon-192.png": 20480,
+      "maskable-512.png": 61440,
+      "maskable-192.png": 30720,
+      "apple-touch-icon.png": 30720
+    },
+
+    "_exceptions": "検査を意図的に見送る項目。ゆるめるのではなく、なぜ見送るかをここに書く。空にしておくのが望ましい。",
+    "exceptions": []
+  }
+}

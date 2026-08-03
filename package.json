@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "test": "node --test",
     "lint": "eslint .",
-    "check": "npm run lint && npm test && npm run build"
+    "check": "npm run lint && npm test && npm run build && npm run gate",
+    "icons": "node scripts/optimize-icons.mjs && node scripts/make-maskable.mjs",
+    "gate": "node scripts/check-project.mjs"
   },
   "repository": {
     "type": "git",
@@ -31,6 +33,7 @@
     "eslint": "^10.7.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.7.0",
+    "sharp": "^0.35.3",
     "tailwindcss": "^4.2.1",
     "vite": "^7.3.1"
   }

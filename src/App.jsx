@@ -21,6 +21,7 @@ import {
 } from './dataSafety';
 import { saveSafetySnapshot, shouldCreateAutomaticSnapshot } from './safetySnapshots';
 import { createPinCredential, upgradePlaintextPin, verifyPin } from './pinSecurity';
+import { InstallButton, UpdateBanner } from './PwaPrompts';
 import {
   DATA_SCHEMA_VERSION,
   createDailyCheckIn,
@@ -36,9 +37,58 @@ import {
 const GlobalStyles = () => (
   <style>{`
     body {
-      font-family: 'Zen Maru Gothic', sans-serif;
-      -webkit-tap-highlight-color: transparent; 
+      /* Zen Maru Gothic は Google Fonts から読む。学校のフィルタリングで
+         そこが塞がれている場合に備え、後ろに端末側の日本語フォントを並べておく。
+         こうしておけばフォントが届かなくても字が崩れず、そのまま使える。 */
+      font-family: 'Zen Maru Gothic', 'Hiragino Maru Gothic ProN', 'Yu Gothic UI',
+                   'Hiragino Kaku Gothic ProN', 'Noto Sans JP', system-ui, sans-serif;
+      -webkit-tap-highlight-color: transparent;
       background-color: #fef2f2; /* tailwind red-50 */
+      /* 画面を二本指で広げられる余地は残しつつ、素早い連打で
+         勝手に拡大してしまうのだけ止める。児童が画面を連打するため。 */
+      touch-action: manipulation;
+    }
+    /* 画面の高さは 100vh ではなく 100dvh を使う。
+       iPad の Safari や Android の Chrome では、アドレスバーが出入りするぶん
+       100vh が実際の表示領域より大きくなり、いちばん下のボタン
+       （「けってい」など）がバーの下に隠れて押せなくなる。 */
+    .app-viewport {
+      height: 100dvh;
+      /* dvh を解釈しない古い端末のための保険。上書きされるので実害はない。 */
+      height: 100svh;
+    }
+    @supports not (height: 100dvh) {
+      .app-viewport { height: 100vh; }
+    }
+    /* 切り欠きのある端末やホームバーに、ヘッダー・フッターが潜り込まないようにする */
+    .safe-top { padding-top: env(safe-area-inset-top); }
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+    .safe-x {
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+    }
+    /* 児童が見る画面の文字は、画面幅から決める。
+       320px のスマホから電子黒板・大型提示装置まで、同じ1本の式でまかなう。
+       固定サイズだと、小さい端末では ID がはみ出し、電子黒板では
+       教室のうしろの席から読めない。 */
+    .fluid-display { font-size: clamp(2rem, 11vw, 3.5rem); }
+    .fluid-key     { font-size: clamp(1.5rem, 6vw, 2.25rem); }
+    .fluid-name    { font-size: clamp(1.5rem, 6vw, 2.25rem); }
+    .fluid-heading { font-size: clamp(1.05rem, 3.6vw, 1.5rem); }
+
+    /* 押せるものは、見た目を変えずに当たり判定だけ 44px 以上にする。
+       ボタン自体を大きくすると、詰めて組んであるツールバーで折り返しが起きる。 */
+    .tap-44 { position: relative; }
+    .tap-44::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 100%;
+      height: 100%;
+      min-width: 44px;
+      min-height: 44px;
     }
     .bg-premium-pattern {
       background-image: radial-gradient(#fecaca 1px, transparent 1px);
@@ -64,6 +114,36 @@ const GlobalStyles = () => (
     ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; border: 2px solid transparent; background-clip: content-box; }
     ::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
 
+    /* 動きに酔いやすい子・前庭障害のある子のための設定を尊重する。
+       OS 側で「視差効果を減らす」を入れている端末では、動きを止める。
+       0 にすると animation-fill-mode の forwards が効かず、
+       fadeInUp を使っている箇所が opacity:0 のまま消えるので、
+       ごく短い時間を残して「一瞬で最終状態になる」ようにしている。 */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+
+    /* Windows のハイコントラストモード。
+       色で区別している境目が消えるので、枠線を明示する。 */
+    @media (forced-colors: active) {
+      button, input, select, textarea, .rounded-2xl, .rounded-3xl {
+        border: 1px solid ButtonText;
+      }
+      .bg-premium-pattern { background-image: none; }
+    }
+
+    /* キーボードで操作しているときだけ、はっきりした枠を出す。
+       マウス・タッチでは出さない（見た目が騒がしくなるため）。 */
+    :focus-visible {
+      outline: 3px solid #b91c1c;
+      outline-offset: 2px;
+    }
+
     /* 🖨️ 印刷用の特別スタイル */
     @media print {
       @page { size: A4 portrait; margin: 0; }
@@ -87,10 +167,10 @@ const GlobalStyles = () => (
 // 🌟 統一設定 & ヘルパー関数
 // ==========================================
 const FEELING_CONFIG = {
-  'げんき': { icon: Smile, colorClass: 'text-orange-500', bgClass: 'bg-orange-50 border-orange-200', hoverClass: 'hover:bg-orange-100' },
-  'ねむい': { icon: Moon, colorClass: 'text-cyan-500', bgClass: 'bg-cyan-50 border-cyan-200', hoverClass: 'hover:bg-cyan-100' },
-  'イライラ': { icon: Zap, colorClass: 'text-rose-500', bgClass: 'bg-rose-50 border-rose-200', hoverClass: 'hover:bg-rose-100' },
-  'かなしい': { icon: CloudRain, colorClass: 'text-indigo-500', bgClass: 'bg-indigo-50 border-indigo-200', hoverClass: 'hover:bg-indigo-100' }
+  'げんき': { icon: Smile, colorClass: 'text-orange-700', bgClass: 'bg-orange-50 border-orange-200', hoverClass: 'hover:bg-orange-100' },
+  'ねむい': { icon: Moon, colorClass: 'text-cyan-700', bgClass: 'bg-cyan-50 border-cyan-200', hoverClass: 'hover:bg-cyan-100' },
+  'イライラ': { icon: Zap, colorClass: 'text-rose-700', bgClass: 'bg-rose-50 border-rose-200', hoverClass: 'hover:bg-rose-100' },
+  'かなしい': { icon: CloudRain, colorClass: 'text-indigo-700', bgClass: 'bg-indigo-50 border-indigo-200', hoverClass: 'hover:bg-indigo-100' }
 };
 const ADMIN_IDLE_TIMEOUT = 10 * 60 * 1000;
 
@@ -244,7 +324,7 @@ const DateInput = ({ className, ...props }) => (
 
 const RubyText = ({ text, kana }) => (
   <ruby className="ruby-position-over">
-    {text}<rt className="text-[0.6em] text-slate-500 font-bold tracking-tight">{kana}</rt>
+    {text}<rt className="text-[0.6em] text-slate-600 font-bold tracking-tight">{kana}</rt>
   </ruby>
 );
 
@@ -258,31 +338,45 @@ const Toast = ({ message, type, onClose }) => {
   }, [onClose]);
 
   return (
-    <div className={`fixed bottom-10 left-1/2 transform -translate-x-1/2 flex items-center gap-3 px-6 py-3 rounded-2xl shadow-lg z-[100] transition-all duration-300 ${isFadingOut ? 'opacity-0 translate-y-4' : 'opacity-100 translate-y-0'} ${type === 'error' ? 'bg-red-500 text-white' : 'bg-slate-800 text-white'}`}>
-      {type === 'error' ? <X size={20} /> : <CheckCircle2 size={20} />}
+    // 読み上げに対応するため role と aria-live を付ける。
+    // エラーは alert（読み上げを割り込ませる）、それ以外は status（区切りで読む）。
+    <div
+      role={type === 'error' ? 'alert' : 'status'}
+      aria-live={type === 'error' ? 'assertive' : 'polite'}
+      className={`no-print fixed bottom-10 left-1/2 transform -translate-x-1/2 flex items-center gap-3 px-6 py-3 rounded-2xl shadow-lg z-[100] transition-all duration-300 ${isFadingOut ? 'opacity-0 translate-y-4' : 'opacity-100 translate-y-0'} ${type === 'error' ? 'bg-red-600 text-white' : 'bg-slate-800 text-white'}`}
+    >
+      {type === 'error' ? <X size={20} aria-hidden="true" /> : <CheckCircle2 size={20} aria-hidden="true" />}
       <span className="font-bold text-sm tracking-wide">{message}</span>
     </div>
   );
 };
 
 const Header = ({ onAdminClick, view }) => (
-  <nav className="bg-white border-b-4 border-red-500 px-6 py-3 flex justify-between items-center shadow-sm z-10 sticky top-0">
-    <div className="flex items-center text-red-600 gap-2">
+  <nav className="bg-white border-b-4 border-red-500 px-6 py-3 flex justify-between items-center shadow-sm z-10 sticky top-0 safe-top safe-x">
+    <div className="flex items-center text-red-700 gap-2">
       <Mailbox size={26} className="stroke-[2.5]" />
       <h1 className="font-bold text-2xl tracking-tight">宿題ポスト</h1>
     </div>
-    {view !== 'admin' && (
-      <button onClick={onAdminClick} className="p-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all active:scale-95 focus:outline-none focus:ring-2 focus:ring-red-200">
-        <Settings size={24} />
-      </button>
-    )}
+    <div className="flex items-center gap-2">
+      <InstallButton />
+      {view !== 'admin' && (
+        <button
+          type="button"
+          onClick={onAdminClick}
+          aria-label="先生用メニューをひらく"
+          className="tap-44 p-2.5 text-slate-600 hover:text-red-700 hover:bg-red-50 rounded-full transition-all active:scale-95 focus:outline-none focus:ring-2 focus:ring-red-200"
+        >
+          <Settings size={24} aria-hidden="true" />
+        </button>
+      )}
+    </div>
   </nav>
 );
 
 const Footer = () => (
-  <footer className="w-full bg-white border-t border-slate-200 pt-3 pb-2 text-center text-sm text-slate-400 font-bold shadow-sm z-10">
+  <footer className="w-full bg-white border-t border-slate-200 pt-3 pb-2 text-center text-sm text-slate-600 font-bold shadow-sm z-10 safe-bottom safe-x">
     © {new Date().getFullYear()} 宿題ポスト{' '}
-    <a href="https://note.com/cute_borage86" target="_blank" rel="noopener noreferrer" className="text-inherit no-underline hover:text-slate-600 transition-colors">
+    <a href="https://note.com/cute_borage86" target="_blank" rel="noopener noreferrer" className="tap-44 inline-block text-inherit no-underline hover:text-slate-600 transition-colors">
       GIGA山
     </a>
   </footer>
@@ -302,7 +396,7 @@ const PrintReport = ({ data, period, template = 'term' }) => {
         <div key={report.student.id} className="print-page flex flex-col">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold mb-2 tracking-widest">学期末 宿題・生活レポート</h1>
-            <p className="text-slate-500 font-bold">対象期間: {period.start} 〜 {period.end}</p>
+            <p className="text-slate-600 font-bold">対象期間: {period.start} 〜 {period.end}</p>
           </div>
           
           <div className="mb-8 flex justify-between items-end border-b-2 border-slate-800 pb-2">
@@ -329,11 +423,11 @@ const PrintReport = ({ data, period, template = 'term' }) => {
                   <tr key={t.name}>
                     <td className="border border-slate-400 p-3 font-bold">
                       {t.name}
-                      {t.archived && <span className="ml-2 text-xs font-normal text-slate-500">（終了した課題）</span>}
+                      {t.archived && <span className="ml-2 text-xs font-normal text-slate-600">（終了した課題）</span>}
                     </td>
                     <td className="border border-slate-400 p-3 text-center">{t.required}</td>
                     <td className="border border-slate-400 p-3 text-center">{t.submitted}</td>
-                    <td className={`border border-slate-400 p-3 text-center font-bold text-lg ${t.unsubmitted > 0 ? 'text-red-600' : ''}`}>
+                    <td className={`border border-slate-400 p-3 text-center font-bold text-lg ${t.unsubmitted > 0 ? 'text-red-700' : ''}`}>
                       {t.unsubmitted > 0 ? t.unsubmitted : 0}
                     </td>
                     <td className="border border-slate-400 p-3 text-center font-bold">{t.rate}%</td>
@@ -341,7 +435,7 @@ const PrintReport = ({ data, period, template = 'term' }) => {
                 ))}
               </tbody>
             </table>
-            <p className="text-xs text-slate-500 mt-2 font-bold">※必要回数は現在のルールに基づくシミュレーション値です。</p>
+            <p className="text-xs text-slate-600 mt-2 font-bold">※必要回数は現在のルールに基づくシミュレーション値です。</p>
           </div>
 
           <div className="mb-10">
@@ -367,7 +461,7 @@ const PrintReport = ({ data, period, template = 'term' }) => {
               <FileText size={24} /> 先生からのメッセージ
             </h3>
             <div className="border-2 border-slate-300 rounded-2xl h-40 p-4 bg-slate-50 relative">
-               <p className="text-slate-300 text-sm absolute top-4 left-4 font-bold">（ここに手書きでコメントを記入できます）</p>
+               <p className="text-slate-600 text-sm absolute top-4 left-4 font-bold">（ここに手書きでコメントを記入できます）</p>
             </div>
           </div>
         </div>
@@ -392,9 +486,9 @@ const SupportSummaryPrintReport = ({ data, period, audience }) => {
           <div key={report.student.id} className="print-page flex flex-col text-slate-900">
             <div className="flex items-start justify-between gap-6 border-b-2 border-indigo-700 pb-4 mb-5">
               <div>
-                <div className="text-xs font-bold tracking-[0.22em] text-indigo-600 mb-1">SHUKUDAI POST REPORT</div>
+                <div className="text-xs font-bold tracking-[0.22em] text-indigo-700 mb-1">SHUKUDAI POST REPORT</div>
                 <h1 className="text-2xl font-bold tracking-wider">{title}</h1>
-                <p className="text-sm text-slate-500 font-bold mt-1">対象期間：{period.start} 〜 {period.end}</p>
+                <p className="text-sm text-slate-600 font-bold mt-1">対象期間：{period.start} 〜 {period.end}</p>
               </div>
               <div className={`px-3 py-2 rounded-lg border text-xs font-bold ${isInternal ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-indigo-50 border-indigo-200 text-indigo-700'}`}>
                 {isInternal ? '校内限定・取扱注意' : '保護者共有用'}
@@ -403,7 +497,7 @@ const SupportSummaryPrintReport = ({ data, period, audience }) => {
 
             <div className="flex items-end justify-between gap-4 mb-5">
               <h2 className="text-2xl font-bold">{report.student.name} さん</h2>
-              <span className="text-sm font-bold text-slate-500">作成日：{getLocalDateString()}</span>
+              <span className="text-sm font-bold text-slate-600">作成日：{getLocalDateString()}</span>
             </div>
 
             <div className="grid grid-cols-4 gap-3 mb-5">
@@ -414,9 +508,9 @@ const SupportSummaryPrintReport = ({ data, period, audience }) => {
                 ['欠席・遅刻', `${insights.attendance.total}件`, '期間内の記録'],
               ].map(([label, value, note]) => (
                 <div key={label} className="border border-slate-200 bg-slate-50 rounded-xl p-3">
-                  <p className="text-[10px] font-bold text-slate-500">{label}</p>
+                  <p className="text-[10px] font-bold text-slate-600">{label}</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1">{value}</p>
-                  <p className="text-[10px] text-slate-500 mt-1">{note}</p>
+                  <p className="text-[10px] text-slate-600 mt-1">{note}</p>
                 </div>
               ))}
             </div>
@@ -426,7 +520,7 @@ const SupportSummaryPrintReport = ({ data, period, audience }) => {
                 <h3 className="bg-slate-100 px-4 py-2.5 font-bold text-sm flex items-center gap-2"><CheckCircle2 size={16} /> 学習の取り組み</h3>
                 <div className="divide-y divide-slate-100">
                   {visibleTasks.length === 0 ? (
-                    <p className="p-4 text-xs text-slate-500">対象となる課題記録はありません。</p>
+                    <p className="p-4 text-xs text-slate-600">対象となる課題記録はありません。</p>
                   ) : visibleTasks.map(task => (
                     <div key={task.name} className="px-4 py-2 flex items-center justify-between gap-3 text-xs">
                       <span className="font-bold truncate">{task.name}</span>
@@ -434,7 +528,7 @@ const SupportSummaryPrintReport = ({ data, period, audience }) => {
                     </div>
                   ))}
                 </div>
-                {reportableTasks.length > visibleTasks.length && <p className="px-4 py-2 text-[10px] text-slate-500 bg-slate-50">ほか{reportableTasks.length - visibleTasks.length}課題</p>}
+                {reportableTasks.length > visibleTasks.length && <p className="px-4 py-2 text-[10px] text-slate-600 bg-slate-50">ほか{reportableTasks.length - visibleTasks.length}課題</p>}
               </section>
 
               <section className="border border-slate-200 rounded-xl overflow-hidden">
@@ -446,7 +540,7 @@ const SupportSummaryPrintReport = ({ data, period, audience }) => {
                     </div>
                   ))}
                 </div>
-                <p className="px-4 py-2 text-[10px] text-slate-500 bg-slate-50">本人が朝に選んだ記録を、そのまま集計しています。</p>
+                <p className="px-4 py-2 text-[10px] text-slate-600 bg-slate-50">本人が朝に選んだ記録を、そのまま集計しています。</p>
               </section>
             </div>
 
@@ -454,18 +548,18 @@ const SupportSummaryPrintReport = ({ data, period, audience }) => {
               <section className="border border-slate-200 rounded-xl p-4">
                 <h3 className="font-bold text-sm flex items-center gap-2 mb-3"><Backpack size={16} /> 学習準備</h3>
                 {insights.forgotten.topItems.length === 0 ? (
-                  <p className="text-xs text-slate-500">期間内の忘れ物記録はありません。</p>
+                  <p className="text-xs text-slate-600">期間内の忘れ物記録はありません。</p>
                 ) : (
                   <div className="space-y-2 text-xs">
-                    <p><span className="text-slate-500 font-bold">多かったもの：</span>{insights.forgotten.topItems.slice(0, 3).map(item => `${item.label} ${item.count}件`).join('、')}</p>
-                    <p><span className="text-slate-500 font-bold">教科：</span>{insights.forgotten.topSubjects.slice(0, 3).map(item => `${item.label} ${item.count}件`).join('、') || '記録なし'}</p>
+                    <p><span className="text-slate-600 font-bold">多かったもの：</span>{insights.forgotten.topItems.slice(0, 3).map(item => `${item.label} ${item.count}件`).join('、')}</p>
+                    <p><span className="text-slate-600 font-bold">教科：</span>{insights.forgotten.topSubjects.slice(0, 3).map(item => `${item.label} ${item.count}件`).join('、') || '記録なし'}</p>
                   </div>
                 )}
               </section>
               <section className="border border-slate-200 rounded-xl p-4">
                 <h3 className="font-bold text-sm flex items-center gap-2 mb-3"><UserCheck size={16} /> 出欠の記録</h3>
                 {insights.attendance.byStatus.length === 0 ? (
-                  <p className="text-xs text-slate-500">期間内の欠席・遅刻記録はありません。</p>
+                  <p className="text-xs text-slate-600">期間内の欠席・遅刻記録はありません。</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">{insights.attendance.byStatus.map(item => <span key={item.label} className="bg-slate-100 rounded-lg px-3 py-2 text-xs font-bold">{item.label} {item.count}件</span>)}</div>
                 )}
@@ -475,30 +569,30 @@ const SupportSummaryPrintReport = ({ data, period, audience }) => {
             <section className="border-2 border-indigo-200 rounded-xl overflow-hidden mb-4">
               <h3 className="bg-indigo-50 px-4 py-2.5 font-bold text-sm text-indigo-900 flex items-center gap-2"><HandHeart size={16} /> {isInternal ? '支援の経過と次回確認' : '学校で取り組んでいること'}</h3>
               {visibleSupports.length === 0 ? (
-                <p className="p-4 text-xs text-slate-500">対象となる支援記録はありません。</p>
+                <p className="p-4 text-xs text-slate-600">対象となる支援記録はありません。</p>
               ) : (
                 <div className="divide-y divide-indigo-100">
                   {visibleSupports.map(support => (
                     <div key={support.id} className="p-3 text-xs">
-                      <div className="flex items-center justify-between gap-3 mb-1.5"><span className="font-bold text-indigo-800">{support.category}</span><span className="font-bold text-slate-500">{support.status}</span></div>
-                      {isInternal && <p><span className="font-bold text-slate-500">確認した事実：</span>{support.observation || '記録なし'}</p>}
-                      <p><span className="font-bold text-slate-500">学校での支援：</span>{support.action || '記録なし'}</p>
-                      <p><span className="font-bold text-slate-500">目指す状態：</span>{support.goal || '記録なし'}</p>
-                      {support.outcome && <p><span className="font-bold text-slate-500">確認した変化：</span>{support.outcome}</p>}
-                      {isInternal && support.followUpDate && <p><span className="font-bold text-slate-500">次回確認：</span>{support.followUpDate}</p>}
+                      <div className="flex items-center justify-between gap-3 mb-1.5"><span className="font-bold text-indigo-800">{support.category}</span><span className="font-bold text-slate-600">{support.status}</span></div>
+                      {isInternal && <p><span className="font-bold text-slate-600">確認した事実：</span>{support.observation || '記録なし'}</p>}
+                      <p><span className="font-bold text-slate-600">学校での支援：</span>{support.action || '記録なし'}</p>
+                      <p><span className="font-bold text-slate-600">目指す状態：</span>{support.goal || '記録なし'}</p>
+                      {support.outcome && <p><span className="font-bold text-slate-600">確認した変化：</span>{support.outcome}</p>}
+                      {isInternal && support.followUpDate && <p><span className="font-bold text-slate-600">次回確認：</span>{support.followUpDate}</p>}
                     </div>
                   ))}
                 </div>
               )}
-              {supports.length > visibleSupports.length && <p className="px-4 py-2 text-[10px] text-slate-500 bg-indigo-50">ほか{supports.length - visibleSupports.length}件の支援記録</p>}
+              {supports.length > visibleSupports.length && <p className="px-4 py-2 text-[10px] text-slate-600 bg-indigo-50">ほか{supports.length - visibleSupports.length}件の支援記録</p>}
             </section>
 
             <section className="mt-auto">
               <h3 className="font-bold text-sm mb-2 flex items-center gap-2"><FileText size={16} /> {isInternal ? '協議事項・次の一手' : 'ご家庭と共有したいこと'}</h3>
-              <div className="border-2 border-dashed border-slate-300 rounded-xl h-24 p-3 text-xs text-slate-300 font-bold">印刷後に追記できます</div>
+              <div className="border-2 border-dashed border-slate-300 rounded-xl h-24 p-3 text-xs text-slate-600 font-bold">印刷後に追記できます</div>
             </section>
 
-            <p className="text-[9px] text-slate-400 mt-3 leading-relaxed">
+            <p className="text-[9px] text-slate-600 mt-3 leading-relaxed">
               {isInternal
                 ? '本資料は校内支援の検討用です。事実記録をもとに作成し、児童の診断や評価順位を示すものではありません。取扱いに注意してください。'
                 : '本資料は学校で記録した事実をまとめたものです。自動的な診断や評価は行っていません。内容について気になる点があれば学校へお知らせください。'}
@@ -520,21 +614,21 @@ const StandbyView = ({ onScan }) => {
     <div className="flex flex-col items-center justify-center min-h-full w-full px-4 py-8 animate-fade-in-up">
       <div className="w-full max-w-md mx-auto">
         <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100 text-center">
-          <h2 className="text-xl font-bold text-slate-500 tracking-wider mb-6">ID NUMBER</h2>
+          <h2 className="fluid-heading font-bold text-slate-600 tracking-wider mb-6">ID NUMBER</h2>
           
-          <div className="bg-slate-50 border-2 border-slate-100 h-24 rounded-2xl flex items-center justify-center text-5xl font-bold tracking-[0.2em] text-red-500 mb-8 shadow-inner overflow-hidden">
-            {keypadVal || <span className="text-slate-200">-</span>}
+          <div className="bg-slate-50 border-2 border-slate-100 h-24 rounded-2xl flex items-center justify-center fluid-display font-bold tracking-[0.2em] text-red-700 mb-8 shadow-inner overflow-hidden">
+            {keypadVal || <span className="text-slate-600">-</span>}
           </div>
           
           <div className="grid grid-cols-3 gap-4 mb-4">
             {['7','8','9','4','5','6','1','2','3'].map(n => (
-              <button key={n} onClick={() => setKeypadVal(v => (v.length < 10 ? v + n : v))} className="bg-white text-3xl font-bold py-6 rounded-2xl shadow-sm border border-slate-100 transition-transform duration-100 active:scale-95 active:bg-slate-100 hover:bg-slate-50 text-slate-700">
+              <button key={n} onClick={() => setKeypadVal(v => (v.length < 10 ? v + n : v))} className="bg-white fluid-key font-bold py-6 rounded-2xl shadow-sm border border-slate-100 transition-transform duration-100 active:scale-95 active:bg-slate-100 hover:bg-slate-50 text-slate-700">
                 {n}
               </button>
             ))}
-            <button onClick={() => setKeypadVal('')} className="bg-slate-50 text-slate-500 text-lg font-bold py-6 rounded-2xl transition-transform duration-100 active:scale-95 border border-slate-200 hover:bg-slate-100">クリア</button>
-            <button onClick={() => setKeypadVal(v => (v.length < 10 ? v + '0' : v))} className="bg-white text-3xl font-bold py-6 rounded-2xl shadow-sm border border-slate-100 transition-transform duration-100 active:scale-95 active:bg-slate-100 hover:bg-slate-50 text-slate-700">0</button>
-            <button onClick={() => { if(keypadVal){onScan(keypadVal); setKeypadVal('');} }} className="bg-red-500 hover:bg-red-400 text-white text-2xl font-bold py-6 rounded-2xl shadow-sm transition-transform duration-100 active:scale-95 flex justify-center items-center">
+            <button onClick={() => setKeypadVal('')} className="bg-slate-50 text-slate-600 text-lg font-bold py-6 rounded-2xl transition-transform duration-100 active:scale-95 border border-slate-200 hover:bg-slate-100">クリア</button>
+            <button onClick={() => setKeypadVal(v => (v.length < 10 ? v + '0' : v))} className="bg-white fluid-key font-bold py-6 rounded-2xl shadow-sm border border-slate-100 transition-transform duration-100 active:scale-95 active:bg-slate-100 hover:bg-slate-50 text-slate-700">0</button>
+            <button onClick={() => { if(keypadVal){onScan(keypadVal); setKeypadVal('');} }} className="bg-red-600 hover:bg-red-400 text-white fluid-key font-bold py-6 rounded-2xl shadow-sm transition-transform duration-100 active:scale-95 flex justify-center items-center">
               OK
             </button>
           </div>
@@ -551,17 +645,17 @@ const StudentTasksView = ({ student, tasks, onNext, onCancel }) => {
   return (
     <div className="flex flex-col min-h-full max-w-lg mx-auto w-full px-4 py-6 animate-fade-in-up">
       <div className="bg-white rounded-2xl shadow-sm p-6 text-center mb-6 border border-slate-100">
-        <span className="text-red-500 font-bold tracking-widest text-xs mb-1 block">HELLO</span>
-        <h2 className="text-3xl font-bold text-slate-800 tracking-tight">{student.name} <span className="text-lg text-slate-500 font-normal">さん</span></h2>
+        <span className="text-red-700 font-bold tracking-widest text-xs mb-1 block">HELLO</span>
+        <h2 className="fluid-name font-bold text-slate-800 tracking-tight">{student.name} <span className="text-lg text-slate-600 font-normal">さん</span></h2>
       </div>
 
-      <h3 className="font-bold text-xl text-slate-800 mb-4 px-2 flex items-center gap-2">
+      <h3 className="font-bold fluid-heading text-slate-800 mb-4 px-2 flex items-center gap-2">
         <CheckCircle2 className="text-red-400" /> <RubyText text="今日" kana="きょう" />だすもの
       </h3>
       
       <div className="grid grid-cols-2 gap-4 mb-8">
         {tasks.length === 0 ? (
-           <div className="col-span-2 text-center text-slate-400 py-10 font-bold bg-white/50 rounded-2xl border border-dashed border-slate-200 flex flex-col items-center gap-2">
+           <div className="col-span-2 text-center text-slate-600 py-10 font-bold bg-white/50 rounded-2xl border border-dashed border-slate-200 flex flex-col items-center gap-2">
              <Sparkles size={32} className="text-amber-400" />
              <span><RubyText text="今日" kana="きょう" />はありません</span>
            </div>
@@ -571,8 +665,8 @@ const StudentTasksView = ({ student, tasks, onNext, onCancel }) => {
             const isDone = task.done;
             return (
               <button key={task.name} disabled={isDone} onClick={() => toggleTask(task.name)} 
-                className={`relative p-5 rounded-2xl flex flex-col items-center justify-center transition-all duration-200 active:scale-95 border-2 ${isDone ? 'bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed' : isSel ? 'bg-red-50 border-red-400 text-red-600 shadow-md transform scale-[1.02]' : 'bg-white border-transparent shadow-sm text-slate-700 hover:border-red-200'}`}>
-                {task.type === '週回数' && <span className="absolute top-3 left-3 text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full"><RubyText text="週" kana="しゅう" /> {task.weeklyCount}/{task.value}<RubyText text="回" kana="かい" /></span>}
+                className={`relative p-5 rounded-2xl flex flex-col items-center justify-center transition-all duration-200 active:scale-95 border-2 ${isDone ? 'bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed' : isSel ? 'bg-red-50 border-red-400 text-red-700 shadow-md transform scale-[1.02]' : 'bg-white border-transparent shadow-sm text-slate-700 hover:border-red-200'}`}>
+                {task.type === '週回数' && <span className="absolute top-3 left-3 text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full"><RubyText text="週" kana="しゅう" /> {task.weeklyCount}/{task.value}<RubyText text="回" kana="かい" /></span>}
                 <div className="mt-2 mb-3 transition-transform duration-200">
                   {isDone || isSel ? <CheckCircle2 size={32} /> : <Circle size={32} />}
                 </div>
@@ -586,10 +680,10 @@ const StudentTasksView = ({ student, tasks, onNext, onCancel }) => {
       
       <div className="mt-auto flex flex-col gap-4 pb-4">
         <button onClick={() => onNext(tasks.filter(t => selected.includes(t.name)))}
-          className="py-4 rounded-xl font-bold text-lg transition-all duration-200 active:scale-95 bg-red-500 text-white shadow-md hover:bg-red-400">
+          className="py-4 rounded-xl font-bold text-lg transition-all duration-200 active:scale-95 bg-red-600 text-white shadow-md hover:bg-red-400">
           {selected.length > 0 ? 'つぎへ' : '提出なしで つぎへ'}
         </button>
-        <button onClick={onCancel} className="py-3 text-slate-400 font-bold hover:text-slate-600 transition-colors">やめる</button>
+        <button onClick={onCancel} className="py-3 text-slate-600 font-bold hover:text-slate-600 transition-colors">やめる</button>
       </div>
     </div>
   );
@@ -623,13 +717,13 @@ const CompleteView = ({ onFinish }) => {
   return (
     <div className="flex flex-col min-h-full max-w-lg mx-auto w-full px-4 py-10 items-center justify-center text-center animate-fade-in-up">
       <div className="mb-6 animate-float">
-        <PartyPopper size={80} className="text-amber-500 drop-shadow-md" />
+        <PartyPopper size={80} className="text-amber-700 drop-shadow-md" />
       </div>
       <h2 className="text-4xl font-bold text-slate-800 mb-4 flex items-center justify-center gap-2 tracking-tight">
         <RubyText text="提出" kana="ていしゅつ" /><RubyText text="完了" kana="かんりょう" />
         <Sparkles size={32} className="text-amber-400" />
       </h2>
-      <p className="font-bold text-red-600 text-lg">よくがんばりました</p>
+      <p className="font-bold text-red-700 text-lg">よくがんばりました</p>
     </div>
   );
 };
@@ -1215,9 +1309,9 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
     <div className={`flex flex-col h-full bg-slate-50 animate-fade-in-up ${isPrinting ? 'hidden' : ''}`}>
       <div className="flex justify-between items-center p-5 bg-white shadow-sm z-20">
         <h2 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-          <GraduationCap className="text-red-500" size={24} /> 先生用メニュー
+          <GraduationCap className="text-red-700" size={24} /> 先生用メニュー
         </h2>
-        <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full transition-all active:scale-95"><X size={20} /></button>
+        <button onClick={onClose} className="tap-44 p-2 text-slate-600 hover:text-slate-600 bg-slate-100 rounded-full transition-all active:scale-95"><X size={20} /></button>
       </div>
       
       <div className="flex overflow-x-auto p-4 gap-2 bg-white border-b border-slate-200 flex-shrink-0 hide-scrollbar">
@@ -1234,7 +1328,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
           { id: 'report', icon: <Printer size={16}/>, label: 'レポート印刷' },
           { id: 'settings', icon: <ShieldAlert size={16}/>, label: '設定' }
         ].map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm whitespace-nowrap transition-all ${activeTab === tab.id ? 'bg-red-500 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:shadow-sm'}`}>
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`tap-44 flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm whitespace-nowrap transition-all ${activeTab === tab.id ? 'bg-red-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:shadow-sm'}`}>
             {tab.icon} {tab.label}
           </button>
         ))}
@@ -1245,11 +1339,11 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
           <div className="space-y-4 animate-fade-in-up">
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-red-50 text-red-500 rounded-lg"><CalendarRange size={20} /></div>
+                <div className="p-2 bg-red-50 text-red-700 rounded-lg"><CalendarRange size={20} /></div>
                 <span className="font-bold text-slate-700">表示期間</span>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <select value={dashboardPreset} onChange={handleDashboardPresetChange} className="bg-slate-50 border border-slate-200 text-slate-700 rounded-xl p-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-transparent transition-all">
+                <select value={dashboardPreset} onChange={handleDashboardPresetChange} className="tap-44 bg-slate-50 border border-slate-200 text-slate-700 rounded-xl p-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-transparent transition-all">
                   <option value="today">今日</option>
                   <option value="this_week">今週</option>
                   <option value="this_month">今月</option>
@@ -1258,7 +1352,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                 </select>
                 <div className="flex items-center gap-2">
                   <DateInput value={dashboardStart} onChange={e => {setDashboardStart(e.target.value); setDashboardPreset('custom');}} className="bg-slate-50 border border-slate-200 rounded-xl p-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all" />
-                  <span className="text-slate-400 font-bold">〜</span>
+                  <span className="text-slate-600 font-bold">〜</span>
                   <DateInput value={dashboardEnd} onChange={e => {setDashboardEnd(e.target.value); setDashboardPreset('custom');}} className="bg-slate-50 border border-slate-200 rounded-xl p-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all" />
                 </div>
               </div>
@@ -1266,17 +1360,17 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col justify-center">
-                <h3 className="text-sm font-bold text-slate-400 mb-2">{isSingleDay ? '対象日のアクション率' : '指定期間の課題提出率'}</h3>
+                <h3 className="text-sm font-bold text-slate-600 mb-2">{isSingleDay ? '対象日のアクション率' : '指定期間の課題提出率'}</h3>
                 <div className="flex items-end gap-2 mb-2">
-                  <span className="text-4xl font-bold text-slate-800">{isSingleDay ? singleDaySubmitRate : multiSubmitRate}</span><span className="text-lg text-slate-500 font-bold mb-1">%</span>
+                  <span className="text-4xl font-bold text-slate-800">{isSingleDay ? singleDaySubmitRate : multiSubmitRate}</span><span className="text-lg text-slate-600 font-bold mb-1">%</span>
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-3 mb-2 overflow-hidden">
                   <div className={`h-full rounded-full transition-all duration-1000 ease-out ${ (isSingleDay ? singleDaySubmitRate : multiSubmitRate) >= 80 ? 'bg-green-500' : (isSingleDay ? singleDaySubmitRate : multiSubmitRate) >= 50 ? 'bg-amber-400' : 'bg-red-400'}`} style={{width: `${isSingleDay ? singleDaySubmitRate : multiSubmitRate}%`}}></div>
                 </div>
-                <p className="text-xs text-slate-500 font-bold">{isSingleDay ? `${db.students.length}名中 ${actedStudentsCount}名 が操作済み` : `全課題 ${multiTotalRequired}件中 ${multiTotalSubmitted}件 提出`}</p>
+                <p className="text-xs text-slate-600 font-bold">{isSingleDay ? `${db.students.length}名中 ${actedStudentsCount}名 が操作済み` : `全課題 ${multiTotalRequired}件中 ${multiTotalSubmitted}件 提出`}</p>
               </div>
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-                 <h3 className="text-sm font-bold text-slate-400 mb-3">{isSingleDay ? '対象日の「きもち」' : '期間内の「きもち」分布'}</h3>
+                 <h3 className="text-sm font-bold text-slate-600 mb-3">{isSingleDay ? '対象日の「きもち」' : '期間内の「きもち」分布'}</h3>
                  <div className="grid grid-cols-4 gap-2">
                    {Object.entries(FEELING_CONFIG).map(([label, config]) => {
                      const Icon = config.icon;
@@ -1290,22 +1384,22 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                  </div>
               </div>
               <button type="button" onClick={() => setActiveTab('forgotten')} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 text-left hover:border-red-200 hover:shadow-md transition-all group">
-                <h3 className="text-sm font-bold text-slate-400 mb-3 flex items-center gap-2"><Backpack size={16} className="text-red-400" /> 忘れ物・学習準備</h3>
+                <h3 className="text-sm font-bold text-slate-600 mb-3 flex items-center gap-2"><Backpack size={16} className="text-red-400" /> 忘れ物・学習準備</h3>
                 <div className="flex items-end gap-2">
                   <span className="text-4xl font-bold text-slate-800">{dashboardForgottenItems.length}</span>
-                  <span className="text-sm text-slate-400 font-bold mb-1">件 / {dashboardForgottenStudents}名</span>
+                  <span className="text-sm text-slate-600 font-bold mb-1">件 / {dashboardForgottenStudents}名</span>
                 </div>
-                <p className="text-xs text-slate-500 font-bold mt-3 group-hover:text-red-500 transition-colors">クリックして記録・分析を開く →</p>
+                <p className="text-xs text-slate-600 font-bold mt-3 group-hover:text-red-700 transition-colors">クリックして記録・分析を開く →</p>
               </button>
               <button type="button" onClick={() => setActiveTab('support')} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 text-left hover:border-indigo-200 hover:shadow-md transition-all group">
-                <h3 className="text-sm font-bold text-slate-400 mb-3 flex items-center gap-2"><HandHeart size={16} className="text-indigo-500" /> 実施中の支援</h3>
+                <h3 className="text-sm font-bold text-slate-600 mb-3 flex items-center gap-2"><HandHeart size={16} className="text-indigo-700" /> 実施中の支援</h3>
                 <div className="flex items-end gap-2">
                   <span className="text-4xl font-bold text-slate-800">{activeSupportActions.length}</span>
-                  <span className="text-sm text-slate-400 font-bold mb-1">件</span>
+                  <span className="text-sm text-slate-600 font-bold mb-1">件</span>
                 </div>
-                <p className={`text-xs font-bold mt-3 ${dueSupportActions.length > 0 ? 'text-red-500' : 'text-slate-500 group-hover:text-indigo-500'}`}>{dueSupportActions.length > 0 ? `振り返り期限 ${dueSupportActions.length}件` : '支援ボードを開く →'}</p>
+                <p className={`text-xs font-bold mt-3 ${dueSupportActions.length > 0 ? 'text-red-700' : 'text-slate-600 group-hover:text-indigo-700'}`}>{dueSupportActions.length > 0 ? `振り返り期限 ${dueSupportActions.length}件` : '支援ボードを開く →'}</p>
               </button>
-              <button type="button" onClick={() => setActiveTab('class-insights')} className="bg-gradient-to-br from-teal-600 to-cyan-600 rounded-2xl p-5 shadow-sm text-left text-white hover:shadow-md transition-all group">
+              <button type="button" onClick={() => setActiveTab('class-insights')} className="bg-gradient-to-br from-teal-800 to-cyan-800 rounded-2xl p-5 shadow-sm text-left text-white hover:shadow-md transition-all group">
                 <h3 className="text-sm font-bold text-cyan-100 mb-3 flex items-center gap-2"><Sparkles size={16} /> 学級改善プラン</h3>
                 <div className="flex items-end gap-2">
                   <span className="text-4xl font-bold">{activeClassActions.length}</span>
@@ -1325,16 +1419,16 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
             {/* 🗓️ 出欠サマリー（1日表示のみ） */}
             {isSingleDay && db.students.length > 0 && (
               <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-                <h3 className="text-xs font-bold text-slate-400 mb-3 flex items-center gap-1.5">
-                  <UserCheck size={14} className="text-green-500" /> 出欠サマリー
-                  <span className="ml-1 text-slate-300 font-normal">（クリックして状態を変更できます）</span>
+                <h3 className="text-xs font-bold text-slate-600 mb-3 flex items-center gap-1.5">
+                  <UserCheck size={14} className="text-green-700" /> 出欠サマリー
+                  <span className="ml-1 text-slate-600 font-normal">（クリックして状態を変更できます）</span>
                 </h3>
                 <div className="flex gap-2 flex-wrap">
                   {[
                     { key: '出席', bgClass: 'bg-green-50 border-green-200 text-green-700', Icon: UserCheck },
                     { key: '遅刻', bgClass: 'bg-amber-50 border-amber-200 text-amber-700', Icon: Clock },
                     { key: '欠席', bgClass: 'bg-red-50 border-red-200 text-red-700', Icon: UserX },
-                    { key: '未確認', bgClass: 'bg-slate-50 border-slate-200 text-slate-500', Icon: Circle },
+                    { key: '未確認', bgClass: 'bg-slate-50 border-slate-200 text-slate-600', Icon: Circle },
                   ].map(({ key, bgClass, Icon }) => (
                     <div key={key} className={`flex items-center gap-2 px-4 py-2 rounded-xl border font-bold text-sm ${bgClass}`}>
                       <Icon size={16} />
@@ -1348,16 +1442,16 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
 
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col">
               <div className="p-4 bg-slate-50 border-b border-slate-100 font-bold text-slate-700 text-sm flex justify-between items-center z-10">
-                <span className="flex items-center gap-2"><ClipboardList size={18} className="text-slate-500" /> {isSingleDay ? '対象日の提出状況一覧' : '指定期間の提出・きもち集計一覧'}</span>
+                <span className="flex items-center gap-2"><ClipboardList size={18} className="text-slate-600" /> {isSingleDay ? '対象日の提出状況一覧' : '指定期間の提出・きもち集計一覧'}</span>
                 {isSingleDay
-                  ? <span className="text-xs font-normal text-slate-500 bg-white px-2 py-1 rounded shadow-sm">📌 課題バッジをクリックで提出記録を編集</span>
-                  : <span className="text-xs font-normal text-slate-500 bg-white px-2 py-1 rounded shadow-sm">※未提出が目立ちます</span>
+                  ? <span className="text-xs font-normal text-slate-600 bg-white px-2 py-1 rounded shadow-sm">📌 課題バッジをクリックで提出記録を編集</span>
+                  : <span className="text-xs font-normal text-slate-600 bg-white px-2 py-1 rounded shadow-sm">※未提出が目立ちます</span>
                 }
               </div>
               <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
                 <table className="w-full text-left border-collapse min-w-[600px]">
                   <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm border-b border-slate-200">
-                    <tr className="text-xs text-slate-500 font-bold uppercase tracking-wider">
+                    <tr className="text-xs text-slate-600 font-bold uppercase tracking-wider">
                       <th className="p-4 w-1/4">児童名</th>
                       {isSingleDay && <th className="p-4 w-28">出欠</th>}
                       <th className="p-4 w-1/4">きもち</th>
@@ -1381,21 +1475,21 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                               <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-bold">
                                 <UserX size={13} /> 欠席
                               </span>
-                              <button onClick={() => handleClearAbsence(data.student.id, data.student.name)} className="text-xs text-slate-400 hover:text-slate-600 font-bold underline text-left">取り消し</button>
+                              <button onClick={() => handleClearAbsence(data.student.id, data.student.name)} className="text-xs text-slate-600 hover:text-slate-600 font-bold underline text-left">取り消し</button>
                             </div>
                           ) : data.attendanceStatus === '遅刻' ? (
                             <div className="flex flex-col gap-1.5">
                               <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-xs font-bold">
                                 <Clock size={13} /> 遅刻
                               </span>
-                              <button onClick={() => handleClearAbsence(data.student.id, data.student.name)} className="text-xs text-slate-400 hover:text-slate-600 font-bold underline text-left">取り消し</button>
+                              <button onClick={() => handleClearAbsence(data.student.id, data.student.name)} className="text-xs text-slate-600 hover:text-slate-600 font-bold underline text-left">取り消し</button>
                             </div>
                           ) : (
                             <div className="flex flex-col gap-1.5">
-                              <span className="text-xs text-slate-300 font-bold">未確認</span>
+                              <span className="text-xs text-slate-600 font-bold">未確認</span>
                               <div className="flex gap-1">
-                                <button onClick={() => handleMarkAbsence(data.student.id, data.student.name, '欠席')} className="px-2 py-1 bg-red-50 border border-red-200 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100 active:scale-95 transition-all">欠席</button>
-                                <button onClick={() => handleMarkAbsence(data.student.id, data.student.name, '遅刻')} className="px-2 py-1 bg-amber-50 border border-amber-200 text-amber-600 rounded-lg text-xs font-bold hover:bg-amber-100 active:scale-95 transition-all">遅刻</button>
+                                <button onClick={() => handleMarkAbsence(data.student.id, data.student.name, '欠席')} className="tap-44 px-2 py-1 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-bold hover:bg-red-100 active:scale-95 transition-all">欠席</button>
+                                <button onClick={() => handleMarkAbsence(data.student.id, data.student.name, '遅刻')} className="tap-44 px-2 py-1 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-xs font-bold hover:bg-amber-100 active:scale-95 transition-all">遅刻</button>
                               </div>
                             </div>
                           )}
@@ -1410,14 +1504,14 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                               })()} {data.feelingData.label}
                             </div>
                           ) : (
-                            <span className="text-slate-300 text-sm font-bold">-</span>
+                            <span className="text-slate-600 text-sm font-bold">-</span>
                           )}
                         </td>
 
                         {/* 📝 インタラクティブな課題バッジ（クリックで提出記録を編集） */}
                         <td className="p-4">
                           {data.tasks.length === 0 ? (
-                            <span className="text-slate-400 text-sm font-bold bg-slate-100 px-3 py-1 rounded-lg">対象課題なし</span>
+                            <span className="text-slate-600 text-sm font-bold bg-slate-100 px-3 py-1 rounded-lg">対象課題なし</span>
                           ) : (
                             <div className="flex flex-wrap gap-2">
                               {data.tasks.map(t => (
@@ -1428,9 +1522,9 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                                     : handleAddManualSubmission(data.student.id, data.student.name, t.name, dashboardStart)
                                   }
                                   title={t.done ? 'クリックで提出記録を取り消す' : 'クリックで提出を記録する'}
-                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold border shadow-sm transition-all active:scale-95 hover:scale-105 cursor-pointer ${t.done ? 'bg-green-50 border-green-200 text-green-700 hover:bg-red-50 hover:border-red-200 hover:text-red-600' : 'bg-red-50 border-red-200 text-red-600 hover:bg-green-50 hover:border-green-200 hover:text-green-700'}`}
+                                  className={`tap-44 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold border shadow-sm transition-all active:scale-95 hover:scale-105 cursor-pointer ${t.done ? 'bg-green-50 border-green-200 text-green-700 hover:bg-red-50 hover:border-red-200 hover:text-red-700' : 'bg-red-50 border-red-200 text-red-700 hover:bg-green-50 hover:border-green-200 hover:text-green-700'}`}
                                 >
-                                  {t.done ? <CheckCircle2 size={16} className="text-green-500" /> : <Circle size={16} className="text-red-400" />}
+                                  {t.done ? <CheckCircle2 size={16} className="text-green-700" /> : <Circle size={16} className="text-red-400" />}
                                   {t.name}
                                   {t.done
                                     ? <MinusCircle size={12} className="opacity-30 ml-0.5" />
@@ -1444,13 +1538,13 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
 
                         <td className="p-4 text-center whitespace-nowrap">
                            {data.tasks.length === 0 ? (
-                              <span className="text-slate-300 font-bold text-sm">-</span>
+                              <span className="text-slate-600 font-bold text-sm">-</span>
                            ) : data.isAllDone ? (
-                              <span className="inline-flex items-center justify-center bg-green-500 text-white p-1.5 rounded-full shadow-sm"><Check size={18}/></span>
+                              <span className="inline-flex items-center justify-center bg-green-600 text-white p-1.5 rounded-full shadow-sm"><Check size={18}/></span>
                            ) : data.isPartial ? (
                               <span className="inline-flex px-3 py-1.5 bg-amber-100 text-amber-700 rounded-lg text-xs font-bold shadow-sm border border-amber-200">一部提出</span>
                            ) : (
-                              <span className="inline-flex px-3 py-1.5 bg-slate-100 text-slate-500 rounded-lg text-xs font-bold shadow-sm border border-slate-200">未着手</span>
+                              <span className="inline-flex px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-bold shadow-sm border border-slate-200">未着手</span>
                            )}
                         </td>
                       </tr>
@@ -1471,18 +1565,18 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                                 </div>
                               );
                             })}
-                            {Object.values(data.feelings).every(v => v === 0) && <span className="text-slate-300 text-sm font-bold">-</span>}
+                            {Object.values(data.feelings).every(v => v === 0) && <span className="text-slate-600 text-sm font-bold">-</span>}
                           </div>
                         </td>
                         <td className="p-4">
                           <div className="flex flex-wrap gap-2">
                             {data.taskStats.filter(t => t.required > 0 || t.submitted > 0).map(t => (
-                              <div key={t.name} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold border shadow-sm ${t.unsubmitted === 0 && t.required > 0 ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-600'}`}>
-                                {t.unsubmitted === 0 && t.required > 0 ? <CheckCircle2 size={16} className="text-green-500" /> : <Circle size={16} className="text-red-400" />}
+                              <div key={t.name} className={`tap-44 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold border shadow-sm ${t.unsubmitted === 0 && t.required > 0 ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                                {t.unsubmitted === 0 && t.required > 0 ? <CheckCircle2 size={16} className="text-green-700" /> : <Circle size={16} className="text-red-400" />}
                                 {t.name} {t.submitted}/{t.required}
                               </div>
                             ))}
-                            {data.taskStats.filter(t => t.required > 0 || t.submitted > 0).length === 0 && <span className="text-slate-400 text-sm font-bold bg-slate-100 px-3 py-1 rounded-lg">対象課題なし</span>}
+                            {data.taskStats.filter(t => t.required > 0 || t.submitted > 0).length === 0 && <span className="text-slate-600 text-sm font-bold bg-slate-100 px-3 py-1 rounded-lg">対象課題なし</span>}
                           </div>
                         </td>
                         <td className="p-4 text-center whitespace-nowrap">
@@ -1490,7 +1584,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                             const req = data.taskStats.reduce((acc, t) => acc + t.required, 0);
                             const sub = data.taskStats.reduce((acc, t) => acc + t.submitted, 0);
                             const rate = req > 0 ? Math.round((sub / req) * 100) : 0;
-                            return <span className={`font-bold text-lg ${rate === 100 && req > 0 ? 'text-green-500' : 'text-slate-700'}`}>{rate}%</span>;
+                            return <span className={`font-bold text-lg ${rate === 100 && req > 0 ? 'text-green-700' : 'text-slate-700'}`}>{rate}%</span>;
                           })()}
                         </td>
                       </tr>
@@ -1554,7 +1648,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
 
             <form onSubmit={handleAddBulkStudents} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-3">
               <h3 className="text-sm font-bold text-slate-600">児童の一括追加</h3>
-              <p className="text-xs text-slate-500">名前を改行して入力してください。出席番号は現在の最大番号から連番で割り振られます。</p>
+              <p className="text-xs text-slate-600">名前を改行して入力してください。出席番号は現在の最大番号から連番で割り振られます。</p>
               <textarea 
                 placeholder="山田 太郎&#13;&#10;佐藤 花子" 
                 value={bulkStudents} 
@@ -1586,24 +1680,24 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                         className="flex-1 bg-white border border-slate-300 rounded-lg p-2 text-sm font-bold focus:outline-none focus:border-red-400 shadow-sm" 
                         placeholder="名前"
                       />
-                      <button onClick={() => handleUpdateStudent(s.id)} className="p-2.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors shadow-sm">
+                      <button onClick={() => handleUpdateStudent(s.id)} className="p-2.5 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors shadow-sm">
                         <Save size={18} />
                       </button>
-                      <button onClick={() => setEditingStudentId(null)} className="p-2.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors shadow-sm">
+                      <button onClick={() => setEditingStudentId(null)} className="p-2.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors shadow-sm">
                         <X size={18} />
                       </button>
                     </div>
                   ) : (
                     <>
                       <div>
-                        <span className="text-xs font-bold text-red-500 bg-red-50 px-2.5 py-1.5 rounded-lg mr-3 border border-red-100">{s.id}</span>
+                        <span className="text-xs font-bold text-red-700 bg-red-50 px-2.5 py-1.5 rounded-lg mr-3 border border-red-100">{s.id}</span>
                         <span className="font-bold text-slate-700">{s.name}</span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <button onClick={() => startEditStudent(s)} className="text-slate-400 hover:text-indigo-500 transition-all active:scale-90 p-2 rounded-full hover:bg-indigo-50">
+                        <button onClick={() => startEditStudent(s)} className="tap-44 text-slate-600 hover:text-indigo-700 transition-all active:scale-90 p-2 rounded-full hover:bg-indigo-50">
                           <Pencil size={18} />
                         </button>
-                        <button onClick={() => handleDeleteStudentSecure(s.id)} className="text-slate-400 hover:text-red-500 transition-all active:scale-90 p-2 rounded-full hover:bg-red-50">
+                        <button onClick={() => handleDeleteStudentSecure(s.id)} className="tap-44 text-slate-600 hover:text-red-700 transition-all active:scale-90 p-2 rounded-full hover:bg-red-50">
                           <Trash2 size={18} />
                         </button>
                       </div>
@@ -1611,7 +1705,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                   )}
                 </div>
               ))}
-              {db.students.length === 0 && <div className="p-6 text-center text-slate-400 font-bold">児童が登録されていません</div>}
+              {db.students.length === 0 && <div className="p-6 text-center text-slate-600 font-bold">児童が登録されていません</div>}
             </div>
           </div>
         )}
@@ -1654,7 +1748,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
               {/* 🗓️ 繰り返し課題の開始日（既定は登録日）。これより前は必要回数に数えない。 */}
               {RECURRING_TASK_TYPES.includes(newTask.type) && (
                 <div className="flex items-center gap-3 animate-fade-in-up">
-                  <span className="text-sm font-bold text-slate-600 flex items-center gap-1.5"><CalendarRange size={16} className="text-slate-400" />開始日</span>
+                  <span className="text-sm font-bold text-slate-600 flex items-center gap-1.5"><CalendarRange size={16} className="text-slate-600" />開始日</span>
                   <DateInput value={newTask.startDate || getLocalDateString()} onChange={e=>setNewTask({...newTask, startDate: e.target.value})} className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-red-400 transition-all" />
                 </div>
               )}
@@ -1674,7 +1768,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                   <div className="flex justify-between items-center">
                     {editingTaskId === t.id ? (
                       <div className="flex-1 flex items-center gap-2 mr-2 animate-fade-in-up">
-                        <span className="text-xs font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100 flex-shrink-0">
+                        <span className="tap-44 text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100 flex-shrink-0">
                           {t.type} {t.value && `(${t.value})`}
                         </span>
                         <input
@@ -1684,22 +1778,22 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                           className="flex-1 bg-white border border-slate-300 rounded-lg p-2 text-sm font-bold focus:outline-none focus:border-red-400 shadow-sm"
                           placeholder="課題名"
                         />
-                        <button onClick={() => handleUpdateTask(t.id, t.name)} className="p-2.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors shadow-sm flex-shrink-0">
+                        <button onClick={() => handleUpdateTask(t.id, t.name)} className="p-2.5 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors shadow-sm flex-shrink-0">
                           <Save size={18} />
                         </button>
-                        <button onClick={() => setEditingTaskId(null)} className="p-2.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors shadow-sm flex-shrink-0">
+                        <button onClick={() => setEditingTaskId(null)} className="p-2.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors shadow-sm flex-shrink-0">
                           <X size={18} />
                         </button>
                       </div>
                     ) : (
                       <>
                         <div>
-                          <span className="text-xs font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-md mr-3 border border-indigo-100">
+                          <span className="tap-44 text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded-md mr-3 border border-indigo-100">
                             {t.type} {t.value && `(${t.value})`}
                           </span>
                           <span className="font-bold text-slate-700">{t.name}</span>
                           {(t.startDate || t.endDate) && (
-                            <span className="ml-2 inline-flex items-center gap-1 text-[11px] font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded-md border border-sky-100 align-middle">
+                            <span className="ml-2 inline-flex items-center gap-1 text-[11px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-md border border-sky-100 align-middle">
                               <CalendarRange size={12} />
                               {t.startDate || '設定なし'} 〜 {t.endDate || '継続中'}
                             </span>
@@ -1710,29 +1804,29 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                             <button
                               onClick={() => togglePeriodEditor(t)}
                               title="課題の期間（開始日・終了日）を設定"
-                              className={`transition-all active:scale-90 p-2 rounded-full ${periodEditTaskId === t.id ? 'text-sky-500 bg-sky-50' : 'text-slate-400 hover:text-sky-500 hover:bg-sky-50'}`}>
+                              className={`tap-44 transition-all active:scale-90 p-2 rounded-full ${periodEditTaskId === t.id ? 'text-sky-700 bg-sky-50' : 'text-slate-600 hover:text-sky-700 hover:bg-sky-50'}`}>
                               <CalendarRange size={18} />
                             </button>
                           )}
                           <button
                             onClick={() => { setExcludeEditTaskId(excludeEditTaskId === t.id ? null : t.id); setExcludeDateInput(getLocalDateString()); }}
                             title="おやすみ日（この日は提出不要）を設定"
-                            className={`transition-all active:scale-90 p-2 rounded-full ${excludeEditTaskId === t.id ? 'text-amber-500 bg-amber-50' : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50'}`}>
+                            className={`tap-44 transition-all active:scale-90 p-2 rounded-full ${excludeEditTaskId === t.id ? 'text-amber-700 bg-amber-50' : 'text-slate-600 hover:text-amber-700 hover:bg-amber-50'}`}>
                             <CalendarOff size={18} />
                           </button>
                           {taskRestSuggestions.length > 0 && (
                             <button
                               onClick={() => setRestSuggestOpenTaskId(restSuggestOpenTaskId === t.id ? null : t.id)}
                               title={`おやすみ日の提案が${taskRestSuggestions.length}件あります`}
-                              className={`relative transition-all active:scale-90 p-2 rounded-full ${restSuggestOpenTaskId === t.id ? 'text-indigo-500 bg-indigo-50' : 'text-indigo-400 hover:text-indigo-500 hover:bg-indigo-50'}`}>
+                              className={`tap-44 relative transition-all active:scale-90 p-2 rounded-full ${restSuggestOpenTaskId === t.id ? 'text-indigo-700 bg-indigo-50' : 'text-indigo-400 hover:text-indigo-700 hover:bg-indigo-50'}`}>
                               <Moon size={18} />
-                              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center bg-indigo-500 text-white text-[10px] font-bold rounded-full">{taskRestSuggestions.length}</span>
+                              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center bg-indigo-600 text-white text-[10px] font-bold rounded-full">{taskRestSuggestions.length}</span>
                             </button>
                           )}
-                          <button onClick={() => startEditTask(t)} className="text-slate-400 hover:text-indigo-500 transition-all active:scale-90 p-2 rounded-full hover:bg-indigo-50">
+                          <button onClick={() => startEditTask(t)} className="tap-44 text-slate-600 hover:text-indigo-700 transition-all active:scale-90 p-2 rounded-full hover:bg-indigo-50">
                             <Pencil size={18} />
                           </button>
-                          <button onClick={() => handleDeleteTaskSecure(t.id)} className="text-slate-400 hover:text-red-500 transition-all active:scale-90 p-2 rounded-full hover:bg-red-50">
+                          <button onClick={() => handleDeleteTaskSecure(t.id)} className="tap-44 text-slate-600 hover:text-red-700 transition-all active:scale-90 p-2 rounded-full hover:bg-red-50">
                             <Trash2 size={18} />
                           </button>
                         </div>
@@ -1746,7 +1840,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                       {(t.excludeDates || []).map(d => (
                         <span key={d} className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-xs font-bold">
                           <CalendarOff size={12} /> {d}
-                          <button onClick={() => handleRemoveExcludeDate(t.id, d)} title="おやすみ設定を取り消す" className="ml-0.5 text-amber-400 hover:text-red-500 transition-colors">
+                          <button onClick={() => handleRemoveExcludeDate(t.id, d)} title="おやすみ設定を取り消す" className="ml-0.5 text-amber-400 hover:text-red-700 transition-colors">
                             <X size={12} />
                           </button>
                         </span>
@@ -1760,7 +1854,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                       <p className="text-xs text-amber-700 font-bold mb-2">「今日だけ宿題なし」など、提出しなくてよい日を追加できます。（必要回数にも数えられません）</p>
                       <div className="flex items-center gap-2">
                         <DateInput value={excludeDateInput} onChange={e => setExcludeDateInput(e.target.value)} className="bg-white border border-amber-200 rounded-xl p-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all" />
-                        <button onClick={() => handleAddExcludeDate(t.id)} className="px-4 py-2 bg-amber-500 text-white rounded-xl text-sm font-bold hover:bg-amber-400 transition-all active:scale-95 shadow-sm flex items-center gap-1.5">
+                        <button onClick={() => handleAddExcludeDate(t.id)} className="px-4 py-2 bg-amber-600 text-white rounded-xl text-sm font-bold hover:bg-amber-400 transition-all active:scale-95 shadow-sm flex items-center gap-1.5">
                           <Plus size={16} /> おやすみ日に追加
                         </button>
                       </div>
@@ -1777,7 +1871,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                         </p>
                         <button
                           onClick={() => handleAcceptRestSuggestions(t.id, taskRestSuggestions.map(s => s.date))}
-                          className="flex-shrink-0 px-3 py-1.5 bg-indigo-500 text-white rounded-lg text-xs font-bold hover:bg-indigo-400 transition-all active:scale-95 shadow-sm flex items-center gap-1">
+                          className="flex-shrink-0 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-400 transition-all active:scale-95 shadow-sm flex items-center gap-1">
                           <Check size={14} /> すべておやすみ
                         </button>
                       </div>
@@ -1786,19 +1880,19 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                           <div key={s.date} className="flex items-center justify-between gap-2 bg-white border border-indigo-100 rounded-lg px-3 py-2">
                             <div className="flex items-center gap-2 text-sm">
                               <span className="font-bold text-slate-700">{s.date}</span>
-                              <span className="text-xs font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-md">提出 {s.submitted}/{s.expected}人・{Math.round(s.rate * 100)}%</span>
+                              <span className="tap-44 text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md">提出 {s.submitted}/{s.expected}人・{Math.round(s.rate * 100)}%</span>
                             </div>
                             <div className="flex items-center gap-1">
                               <button
                                 onClick={() => handleAcceptRestSuggestions(t.id, s.date)}
                                 title="この日をおやすみ日にする"
-                                className="px-2.5 py-1 bg-amber-500 text-white rounded-lg text-xs font-bold hover:bg-amber-400 transition-all active:scale-95 flex items-center gap-1">
+                                className="px-2.5 py-1 bg-amber-600 text-white rounded-lg text-xs font-bold hover:bg-amber-400 transition-all active:scale-95 flex items-center gap-1">
                                 <CalendarOff size={13} /> おやすみに
                               </button>
                               <button
                                 onClick={() => handleDismissRestSuggestion(t.id, s.date)}
                                 title="この日は提出が必要だった（提案を消す）"
-                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-90">
+                                className="p-1.5 text-slate-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all active:scale-90">
                                 <X size={14} />
                               </button>
                             </div>
@@ -1823,11 +1917,11 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                         </label>
                       </div>
                       <div className="flex items-center gap-2 mt-3">
-                        <button onClick={() => handleSavePeriod(t.id)} className="px-4 py-2 bg-sky-500 text-white rounded-xl text-sm font-bold hover:bg-sky-400 transition-all active:scale-95 shadow-sm flex items-center gap-1.5">
+                        <button onClick={() => handleSavePeriod(t.id)} className="px-4 py-2 bg-sky-700 text-white rounded-xl text-sm font-bold hover:bg-sky-400 transition-all active:scale-95 shadow-sm flex items-center gap-1.5">
                           <Save size={16} /> 期間を保存
                         </button>
                         {(t.startDate || t.endDate) && (
-                          <button onClick={() => handleClearPeriod(t.id)} className="px-4 py-2 bg-white text-sky-600 border border-sky-200 rounded-xl text-sm font-bold hover:bg-sky-50 transition-all active:scale-95 flex items-center gap-1.5">
+                          <button onClick={() => handleClearPeriod(t.id)} className="px-4 py-2 bg-white text-sky-700 border border-sky-200 rounded-xl text-sm font-bold hover:bg-sky-50 transition-all active:scale-95 flex items-center gap-1.5">
                             <X size={16} /> 期間の設定を解除
                           </button>
                         )}
@@ -1837,13 +1931,13 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                 </div>
                 );
               })}
-              {db.tasks.filter(t => !t.archived).length === 0 && <div className="p-6 text-center text-slate-400 font-bold">ルールが設定されていません</div>}
+              {db.tasks.filter(t => !t.archived).length === 0 && <div className="p-6 text-center text-slate-600 font-bold">ルールが設定されていません</div>}
             </div>
 
             {/* 🗄️ 終了（削除）した課題：記録は保持され、レポートに反映される */}
             {db.tasks.some(t => t.archived) && (
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                <button onClick={() => setShowArchivedTasks(v => !v)} className="w-full p-4 bg-slate-50 font-bold text-slate-500 text-sm flex justify-between items-center hover:bg-slate-100 transition-colors">
+                <button onClick={() => setShowArchivedTasks(v => !v)} className="w-full p-4 bg-slate-50 font-bold text-slate-600 text-sm flex justify-between items-center hover:bg-slate-100 transition-colors">
                   <span className="flex items-center gap-2"><Archive size={16} /> 終了した課題（提出記録・集計は保持されています）</span>
                   <span className="text-xs bg-white px-2 py-1 rounded-lg shadow-sm">{db.tasks.filter(t => t.archived).length}件 {showArchivedTasks ? '▲' : '▼'}</span>
                 </button>
@@ -1852,18 +1946,18 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                     {db.tasks.filter(t => t.archived).map(t => (
                       <div key={t.id} className="flex justify-between items-center p-4">
                         <div>
-                          <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md mr-3 border border-slate-200">
+                          <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded-md mr-3 border border-slate-200">
                             {t.type} {t.value && `(${t.value})`}
                           </span>
-                          <span className="font-bold text-slate-500">{t.name}</span>
-                          {(t.startDate || t.endDate) && <span className="ml-2 text-xs text-slate-400">（{t.startDate || '〜'}〜{t.endDate || ''}）</span>}
-                          {t.archivedAt && <span className="ml-2 text-xs text-slate-400">（{t.archivedAt} 終了）</span>}
+                          <span className="font-bold text-slate-600">{t.name}</span>
+                          {(t.startDate || t.endDate) && <span className="ml-2 text-xs text-slate-600">（{t.startDate || '〜'}〜{t.endDate || ''}）</span>}
+                          {t.archivedAt && <span className="ml-2 text-xs text-slate-600">（{t.archivedAt} 終了）</span>}
                         </div>
                         <div className="flex items-center gap-1">
-                          <button onClick={() => handleRestoreTask(t.id)} title="ルールを復元する" className="text-slate-400 hover:text-green-600 transition-all active:scale-90 p-2 rounded-full hover:bg-green-50">
+                          <button onClick={() => handleRestoreTask(t.id)} title="ルールを復元する" className="tap-44 text-slate-600 hover:text-green-700 transition-all active:scale-90 p-2 rounded-full hover:bg-green-50">
                             <ArchiveRestore size={18} />
                           </button>
-                          <button onClick={() => handlePermanentDeleteTask(t.id)} title="レポート集計からも完全に削除する" className="text-slate-400 hover:text-red-500 transition-all active:scale-90 p-2 rounded-full hover:bg-red-50">
+                          <button onClick={() => handlePermanentDeleteTask(t.id)} title="レポート集計からも完全に削除する" className="tap-44 text-slate-600 hover:text-red-700 transition-all active:scale-90 p-2 rounded-full hover:bg-red-50">
                             <Trash2 size={18} />
                           </button>
                         </div>
@@ -1883,7 +1977,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
               <div className="relative z-10">
                 <span className="text-xs font-bold tracking-[0.18em] text-indigo-200">REPORT CENTER</span>
                 <h3 className="text-2xl font-bold mt-2">レポートセンター</h3>
-                <p className="text-sm font-bold text-slate-300 mt-2 max-w-2xl leading-relaxed">目的に合わせて、学期末の提出レポート、保護者面談サマリー、校内支援会議資料を作成します。</p>
+                <p className="text-sm font-bold text-slate-200 mt-2 max-w-2xl leading-relaxed">目的に合わせて、学期末の提出レポート、保護者面談サマリー、校内支援会議資料を作成します。</p>
               </div>
             </div>
 
@@ -1906,9 +2000,9 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                       <button key={template.id} type="button" onClick={() => setReportTemplate(template.id)} className={`text-left p-4 rounded-2xl border-2 transition-all ${selected ? `${selectedClass} ring-4` : 'border-slate-100 hover:border-slate-200 bg-white'}`}>
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-bold text-slate-800">{template.title}</span>
-                          <span className="text-[10px] font-bold bg-white/80 border border-slate-200 text-slate-500 px-2 py-1 rounded-full">{template.badge}</span>
+                          <span className="text-[10px] font-bold bg-white border border-slate-200 text-slate-700 px-2 py-1 rounded-full">{template.badge}</span>
                         </div>
-                        <p className="text-xs text-slate-500 mt-2 leading-relaxed">{template.detail}</p>
+                        <p className="text-xs text-slate-600 mt-2 leading-relaxed">{template.detail}</p>
                       </button>
                     );
                   })}
@@ -1920,12 +2014,12 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                   <h4 className="text-sm font-bold text-slate-700 mb-3">2. 集計期間</h4>
                   <div className="flex items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
                     <div className="flex-1">
-                      <label className="block text-xs font-bold text-slate-500 mb-1">開始日</label>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">開始日</label>
                       <DateInput value={reportStartDate} onChange={e=>setReportStartDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-all shadow-sm" />
                     </div>
-                    <div className="text-slate-400 font-bold mt-5">〜</div>
+                    <div className="text-slate-600 font-bold mt-5">〜</div>
                     <div className="flex-1">
-                      <label className="block text-xs font-bold text-slate-500 mb-1">終了日</label>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">終了日</label>
                       <DateInput value={reportEndDate} onChange={e=>setReportEndDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-all shadow-sm" />
                     </div>
                   </div>
@@ -1936,7 +2030,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                     <option value="all">クラス全員（{db.students.length}名）</option>
                     {db.students.map(student => <option key={student.id} value={student.id}>{student.id}. {student.name}</option>)}
                   </select>
-                  <p className="text-[11px] text-slate-400 mt-2">児童ごとにA4一枚で出力します。</p>
+                  <p className="text-[11px] text-slate-600 mt-2">児童ごとにA4一枚で出力します。</p>
                 </div>
               </div>
 
@@ -1951,7 +2045,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                 <Printer size={20} /> {reportStudentId === 'all' ? `${db.students.length}名分を` : '選択した児童の資料を'}作成して印刷
               </button>
 
-              <div className="text-xs text-slate-500 bg-slate-50 p-4 rounded-xl border border-slate-200 leading-relaxed">
+              <div className="text-xs text-slate-600 bg-slate-50 p-4 rounded-xl border border-slate-200 leading-relaxed">
                 <p className="font-bold text-slate-700 mb-1 flex items-center gap-1"><FileText size={14}/> PDF保存</p>
                 <p>印刷画面の送信先を<b>「PDFに保存」</b>に変更してください。背景色を出す場合は<b>「背景のグラフィック」</b>を有効にします。共有前に必ず内容を確認してください。</p>
               </div>
@@ -1962,8 +2056,8 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
         {activeTab === 'settings' && (
           <div className="space-y-4 animate-fade-in-up">
             <form onSubmit={handleChangePin} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-3">
-              <h3 className="text-sm font-bold text-red-500">セキュリティ設定</h3>
-              <p className="text-xs text-slate-500 font-bold mb-2">先生用メニューを開くためのPINコードを変更します。PINは端末内・バックアップとも復元できないハッシュ形式で保存されます。</p>
+              <h3 className="text-sm font-bold text-red-700">セキュリティ設定</h3>
+              <p className="text-xs text-slate-600 font-bold mb-2">先生用メニューを開くためのPINコードを変更します。PINは端末内・バックアップとも復元できないハッシュ形式で保存されます。</p>
               <input 
                 type="password" 
                 placeholder="新しいPINコード (英数字6文字以上)"
@@ -1979,7 +2073,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
 
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-4">
               <h3 className="text-sm font-bold text-slate-600 flex items-center gap-2"><Database size={18}/> データのバックアップと復元</h3>
-              <p className="text-xs text-slate-500 font-bold mb-2 leading-relaxed">
+              <p className="text-xs text-slate-600 font-bold mb-2 leading-relaxed">
                 現在のすべてのデータ（名簿・課題・提出記録・設定）をファイルとして保存（バックアップ）したり、保存したファイルから復元することができます。端末の変更時や定期的なデータ保管にご利用ください。
               </p>
               <div className="flex gap-4">
@@ -1998,7 +2092,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
             {/* ☁️ Googleドライブ同期（複数端末でのデータ共有） */}
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-sky-200 flex flex-col gap-4">
               <h3 className="text-sm font-bold text-sky-700 flex items-center gap-2"><Cloud size={18} /> 複数端末でのデータ同期（Googleドライブ）</h3>
-              <p className="text-xs text-slate-500 font-bold leading-relaxed">
+              <p className="text-xs text-slate-600 font-bold leading-relaxed">
                 Googleアカウントでログインすると、名簿・課題・提出記録などをGoogleドライブに自動バックアップし、別の端末（PC・iPad・Chromebook）でも同じデータを引き継げます。
               </p>
 
@@ -2010,7 +2104,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                   </div>
                   <p className="text-xs text-slate-600 leading-relaxed">
                     Google Cloud Console で作成した「OAuth クライアントID」を貼り付けてください。設定方法は
-                    <a href="https://github.com/GIGAyama/Homework_barcordreader#-複数端末でのデータ同期googleドライブ連携" target="_blank" rel="noopener noreferrer" className="text-sky-600 underline font-bold inline-flex items-center gap-0.5">README <ExternalLink size={11} /></a>
+                    <a href="https://github.com/GIGAyama/Homework_barcordreader#-複数端末でのデータ同期googleドライブ連携" target="_blank" rel="noopener noreferrer" className="tap-44 text-sky-700 underline font-bold inline-flex items-center gap-0.5">README <ExternalLink size={11} /></a>
                     をご覧ください。（この端末にのみ保存され、外部に送信されません）
                   </p>
                   <input
@@ -2028,20 +2122,20 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                       drive.setClientId(clientIdInput);
                       showToast('クライアントIDを保存しました');
                     }}
-                    className="bg-sky-600 text-white font-bold py-3 rounded-xl transition-all active:scale-95 hover:bg-sky-500 shadow-sm flex items-center justify-center gap-2">
+                    className="bg-sky-700 text-white font-bold py-3 rounded-xl transition-all active:scale-95 hover:bg-sky-700 shadow-sm flex items-center justify-center gap-2">
                     <Save size={18} /> 保存して有効にする
                   </button>
                 </div>
               ) : (
                 // ── クライアントID設定済み：接続・同期の操作 ──
                 <div className="flex flex-col gap-3">
-                  <div className={`flex items-center justify-between gap-2 px-4 py-3 rounded-xl border text-sm font-bold ${drive.connected ? 'bg-green-50 border-green-200 text-green-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                  <div className={`flex items-center justify-between gap-2 px-4 py-3 rounded-xl border text-sm font-bold ${drive.connected ? 'bg-green-50 border-green-200 text-green-700' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
                     <span className="flex items-center gap-2">
                       {drive.syncing ? <Loader2 size={16} className="animate-spin" /> : drive.connected ? <CheckCircle2 size={16} /> : <Circle size={16} />}
                       {drive.syncing ? '通信中…' : drive.connected ? 'ドライブに接続中' : '未接続'}
                     </span>
                     {drive.lastSyncedAt && (
-                      <span className="text-xs font-normal text-slate-400">
+                      <span className="text-xs font-normal text-slate-600">
                         最終同期: {new Date(drive.lastSyncedAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </span>
                     )}
@@ -2072,7 +2166,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                   )}
 
                   {!drive.connected ? (
-                    <button onClick={drive.connect} disabled={drive.syncing} className="bg-sky-600 text-white font-bold py-3 rounded-xl transition-all active:scale-95 hover:bg-sky-500 shadow-sm flex items-center justify-center gap-2 disabled:opacity-60">
+                    <button onClick={drive.connect} disabled={drive.syncing} className="bg-sky-700 text-white font-bold py-3 rounded-xl transition-all active:scale-95 hover:bg-sky-700 shadow-sm flex items-center justify-center gap-2 disabled:opacity-60">
                       <Link2 size={18} /> Googleでログインして接続
                     </button>
                   ) : (
@@ -2092,8 +2186,8 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                   {/* 自動同期トグル */}
                   <label className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer">
                     <span className="text-sm font-bold text-slate-600 flex items-center gap-2">
-                      <RefreshCw size={16} className="text-sky-500" /> 自動同期
-                      <span className="text-xs font-normal text-slate-400">（変更を自動保存・起動時に復元確認）</span>
+                      <RefreshCw size={16} className="text-sky-700" /> 自動同期
+                      <span className="text-xs font-normal text-slate-600">（変更を自動保存・起動時に復元確認）</span>
                     </span>
                     <input
                       type="checkbox"
@@ -2108,7 +2202,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
 
                   <div className="flex items-center justify-between gap-2 pt-1">
                     {drive.connected && (
-                      <button onClick={drive.disconnect} className="text-xs text-slate-400 hover:text-slate-600 font-bold underline flex items-center gap-1">
+                      <button onClick={drive.disconnect} className="text-xs text-slate-600 hover:text-slate-600 font-bold underline flex items-center gap-1">
                         <Unlink size={13} /> 接続を解除
                       </button>
                     )}
@@ -2121,7 +2215,7 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                         setClientIdInput('');
                         showToast('クライアントIDの設定を削除しました');
                       }}
-                      className="text-xs text-slate-400 hover:text-red-500 font-bold underline ml-auto">
+                      className="text-xs text-slate-600 hover:text-red-700 font-bold underline ml-auto">
                       クライアントIDを変更／削除
                     </button>
                   </div>
@@ -2130,10 +2224,10 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
             </div>
 
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-red-200 flex flex-col gap-4 mt-2">
-              <h3 className="text-sm font-bold text-red-600 flex items-center gap-2"><AlertTriangle size={18}/> 年度更新（データ初期化）</h3>
-              <p className="text-xs text-slate-500 font-bold leading-relaxed">
+              <h3 className="text-sm font-bold text-red-700 flex items-center gap-2"><AlertTriangle size={18}/> 年度更新（データ初期化）</h3>
+              <p className="text-xs text-slate-600 font-bold leading-relaxed">
                 新年度に向けて、現在の「名簿」「課題ルール」「提出記録」をすべて削除し、初期状態に戻します。（PINコードの設定のみ保持されます）<br/>
-                <span className="text-red-500 mt-1 inline-block">※実行直前の状態は「自動復元ポイント」へ退避します。端末故障に備えてファイルバックアップも保存してください。</span>
+                <span className="text-red-700 mt-1 inline-block">※実行直前の状態は「自動復元ポイント」へ退避します。端末故障に備えてファイルバックアップも保存してください。</span>
               </p>
               <button onClick={handleYearlyReset} className="w-full bg-red-50 text-red-700 font-bold py-3.5 rounded-xl border border-red-200 transition-all active:scale-95 flex items-center justify-center gap-2 hover:bg-red-100 shadow-sm">
                 <RefreshCw size={18} /> 全データを消去して新年度を迎える
@@ -2332,6 +2426,21 @@ export default function App() {
     }
   }, [authPin, db.config, showToastMsg]);
 
+  // Esc でPIN入力を閉じる。
+  // キーボードだけで操作している先生と、外付けキーボードを付けた iPad のため。
+  // 閉じるボタンに手が届かない位置に画面が寄ることがあるので、逃げ道が要る。
+  useEffect(() => {
+    if (!showAuthModal) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setShowAuthModal(false);
+      setAuthPin('');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showAuthModal]);
+
   useEffect(() => {
     if (view !== 'admin') return undefined;
     let timer;
@@ -2364,8 +2473,9 @@ export default function App() {
 
   return (
     <>
-      <div className={`h-screen w-full flex flex-col font-sans overflow-hidden text-slate-800 bg-red-50/40 relative selection:bg-red-200 ${isPrinting ? 'hidden' : ''}`}>
+      <div className={`app-viewport w-full flex flex-col font-sans overflow-hidden text-slate-800 bg-red-50/40 relative selection:bg-red-200 ${isPrinting ? 'hidden' : ''}`}>
         <GlobalStyles />
+        <UpdateBanner />
         {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
         <Header onAdminClick={() => setShowAuthModal(true)} view={view} />
         
@@ -2394,18 +2504,23 @@ export default function App() {
         {view !== 'admin' && <Footer />}
 
         {showAuthModal && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex justify-center items-center p-4 animate-fade-in-up">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-auth-title"
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex justify-center items-center p-4 animate-fade-in-up"
+          >
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col">
               <div className="flex justify-between items-center p-5 border-b border-slate-100 bg-slate-50">
-                <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                  <GraduationCap className="text-red-500" size={20} /> 先生用メニュー
+                <h3 id="admin-auth-title" className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                  <GraduationCap className="text-red-700" size={20} aria-hidden="true" /> 先生用メニュー
                 </h3>
-                <button onClick={() => setShowAuthModal(false)} className="p-2 rounded-full hover:bg-slate-200 text-slate-500 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"><X size={20}/></button>
+                <button type="button" onClick={() => setShowAuthModal(false)} aria-label="とじる" className="tap-44 p-2 rounded-full hover:bg-slate-200 text-slate-600 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"><X size={20} aria-hidden="true" /></button>
               </div>
               <form onSubmit={handleAdminLogin} className="p-6 flex flex-col gap-5">
-                <p className="text-sm text-slate-500 font-bold leading-relaxed">
+                <p className="text-sm text-slate-600 font-bold leading-relaxed">
                   管理画面を開くためのPINコードを入力してください。<br/>
-                  （初期値: <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 font-mono">admin</span>）
+                  （初期値: <span className="text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 font-mono">admin</span>）
                 </p>
                 <input 
                   type="password" 

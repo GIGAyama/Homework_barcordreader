@@ -2,11 +2,62 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      「ホーム画面に追加」の案内を出すための仕掛け。
+      Chrome の beforeinstallprompt は React の起動より前に飛んでくることがあり、
+      受け取り手がいないと捨てられて二度と来ない。だから <head> のいちばん上に置く。
+    -->
+    <script src="/Homework_barcordreader/install-hook.js"></script>
+    <!--
+      Content-Security-Policy
+
+      connect-src だけ https: と広めにしている。理由は、先生が自分で立てた
+      AI プロキシ（Cloud Run など）の URL を画面から入力して使う作りだから。
+      URL は学校ごとに違うので、あらかじめ列挙できない。
+      代わりに http: / data: / ws: は許可しないこと、アプリ側でも
+      validateProxyUrl() が HTTPS 以外を弾くことで守る。
+
+      script-src に accounts.google.com があるのは、Google ドライブ連携で
+      Google のログイン用スクリプト（gsi/client）を読み込むため。
+      style-src の 'unsafe-inline' は、画面内で <style> を書き出している箇所と
+      style 属性のため。
+    -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' https://accounts.google.com;
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+      font-src 'self' https://fonts.gstatic.com;
+      img-src 'self' data: blob:;
+      connect-src 'self' https:;
+      frame-src https://accounts.google.com;
+      worker-src 'self';
+      manifest-src 'self';
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self';
+    " />
+    <!--
+      frame-ancestors はここには書けない。<meta> で配ると無視され、
+      読み込みのたびに警告がコンソールに出るだけになる（実測で確認した）。
+      他サイトへの埋め込みを止めるには HTTP ヘッダーが要るが、
+      GitHub Pages ではヘッダーを足せない。独自ドメインや CDN を挟むときに設定すること。
+    -->
+    <!--
+      viewport-fit=cover は、iPad や画面に切り欠きのある端末で
+      安全領域（env(safe-area-inset-*)）を CSS から使えるようにするために要る。
+      maximum-scale や user-scalable は指定しない。指定すると児童が
+      拡大できなくなり、見えづらい子が使えなくなる。
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="宿題の提出確認と朝の健康観察（きもちメーター）を一瞬で完了できる教室用アプリ" />
     <meta name="theme-color" content="#ef4444" />
+    <meta name="color-scheme" content="light" />
     <link rel="icon" href="/Homework_barcordreader/favicon.png" />
-    <link rel="apple-touch-icon" href="/Homework_barcordreader/icons/icon-192.png" />
+    <!--
+      apple-touch-icon は透明を持たない専用画像を指す。
+      角丸の外が透明な画像を指定すると、iPad のホーム画面で四隅が黒く出る。
+    -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/Homework_barcordreader/apple-touch-icon.png" />
     <link rel="manifest" href="/Homework_barcordreader/manifest.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

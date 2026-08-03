@@ -58,37 +58,37 @@ export default function SafetySnapshotPanel({ db, showToast }) {
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-bold text-emerald-700 flex items-center gap-2"><ShieldCheck size={18} /> 自動復元ポイント</h3>
-          <p className="text-xs text-slate-500 font-bold leading-relaxed mt-2">変更中は30分ごと、データを上書きする操作の直前には必ず端末内へ退避します。整合性を検証した最新5世代を保持します。</p>
+          <p className="text-xs text-slate-600 font-bold leading-relaxed mt-2">変更中は30分ごと、データを上書きする操作の直前には必ず端末内へ退避します。整合性を検証した最新5世代を保持します。</p>
         </div>
-        <button type="button" onClick={createSnapshot} className="shrink-0 bg-emerald-50 text-emerald-700 font-bold px-4 py-2.5 rounded-xl border border-emerald-200 hover:bg-emerald-100 flex items-center justify-center gap-2 text-sm">
+        <button type="button" onClick={createSnapshot} className="tap-44 shrink-0 bg-emerald-50 text-emerald-700 font-bold px-4 py-2.5 rounded-xl border border-emerald-200 hover:bg-emerald-100 flex items-center justify-center gap-2 text-sm">
           <History size={16} /> 今すぐ保存
         </button>
       </div>
 
       {snapshots.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-xs text-slate-500">最初の変更後に復元ポイントが自動作成されます。</div>
+        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">最初の変更後に復元ポイントが自動作成されます。</div>
       ) : (
         <div className="space-y-2">
           {snapshots.map((snapshot, index) => (
             <article key={snapshot.id} className="rounded-xl border border-slate-200 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  {index === 0 ? <CheckCircle2 size={15} className="text-emerald-500" /> : <Clock3 size={15} className="text-slate-400" />}
+                  {index === 0 ? <CheckCircle2 size={15} className="text-emerald-700" /> : <Clock3 size={15} className="text-slate-600" />}
                   <p className="text-sm font-bold text-slate-700 truncate">{snapshot.reason}</p>
                   {snapshot.automatic && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">自動</span>}
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1 ml-6">{formatDateTime(snapshot.createdAt)}・{snapshot.totalRecords}件</p>
+                <p className="text-[11px] text-slate-600 mt-1 ml-6">{formatDateTime(snapshot.createdAt)}・{snapshot.totalRecords}件</p>
               </div>
               <div className="flex gap-2 shrink-0">
-                <button type="button" onClick={() => restoreSnapshot(snapshot.id)} className="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-700 flex items-center gap-1"><RotateCcw size={13} /> 戻す</button>
-                <button type="button" onClick={() => removeSnapshot(snapshot.id)} aria-label="復元ポイントを削除" className="p-2 rounded-lg bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500"><Trash2 size={15} /></button>
+                <button type="button" onClick={() => restoreSnapshot(snapshot.id)} className="tap-44 px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-700 flex items-center gap-1"><RotateCcw size={13} /> 戻す</button>
+                <button type="button" onClick={() => removeSnapshot(snapshot.id)} aria-label="復元ポイントを削除" className="tap-44 p-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-700"><Trash2 size={15} /></button>
               </div>
             </article>
           ))}
         </div>
       )}
 
-      <p className="text-[11px] text-slate-400 flex items-center gap-1.5"><ArchiveRestore size={13} /> 復元ポイントはこの端末内に保存されます。端末故障に備え、ファイルまたはGoogleドライブのバックアップも併用してください。</p>
+      <p className="text-[11px] text-slate-600 flex items-center gap-1.5"><ArchiveRestore size={13} /> 復元ポイントはこの端末内に保存されます。端末故障に備え、ファイルまたはGoogleドライブのバックアップも併用してください。</p>
     </section>
   );
 }

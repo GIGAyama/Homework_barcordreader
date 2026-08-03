@@ -91,10 +91,10 @@ export default function ForgottenItemsPanel({ students, records, setRecords, sho
 
   return (
     <div className="space-y-4 animate-fade-in-up">
-      <div className="bg-gradient-to-br from-red-500 to-rose-500 rounded-3xl p-6 text-white shadow-lg shadow-red-100 overflow-hidden relative">
+      <div className="bg-gradient-to-br from-red-700 to-rose-700 rounded-3xl p-6 text-white shadow-lg shadow-red-100 overflow-hidden relative">
         <div className="absolute -right-8 -bottom-10 opacity-15"><Backpack size={150} /></div>
         <div className="relative z-10 max-w-2xl">
-          <span className="inline-flex items-center gap-1.5 text-xs font-bold bg-white/20 px-3 py-1 rounded-full mb-3">
+          <span className="inline-flex items-center gap-1.5 text-xs font-bold bg-black/25 px-3 py-1 rounded-full mb-3">
             <ClipboardPlus size={14} /> 授業中に10秒で記録
           </span>
           <h3 className="text-2xl font-bold mb-2">忘れ物・学習準備</h3>
@@ -106,33 +106,33 @@ export default function ForgottenItemsPanel({ students, records, setRecords, sho
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-          <div className="text-xs font-bold text-slate-400 flex items-center gap-1.5"><BarChart3 size={14} /> 直近28日</div>
-          <div className="text-3xl font-bold text-slate-800 mt-2">{analytics.total}<span className="text-sm text-slate-400 ml-1">件</span></div>
+          <div className="text-xs font-bold text-slate-600 flex items-center gap-1.5"><BarChart3 size={14} /> 直近28日</div>
+          <div className="text-3xl font-bold text-slate-800 mt-2">{analytics.total}<span className="text-sm text-slate-600 ml-1">件</span></div>
         </div>
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-          <div className="text-xs font-bold text-slate-400 flex items-center gap-1.5"><Users size={14} /> 困った児童</div>
-          <div className="text-3xl font-bold text-slate-800 mt-2">{analytics.affectedStudents}<span className="text-sm text-slate-400 ml-1">名</span></div>
+          <div className="text-xs font-bold text-slate-600 flex items-center gap-1.5"><Users size={14} /> 困った児童</div>
+          <div className="text-3xl font-bold text-slate-800 mt-2">{analytics.affectedStudents}<span className="text-sm text-slate-600 ml-1">名</span></div>
         </div>
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-          <div className="text-xs font-bold text-slate-400 flex items-center gap-1.5"><CheckCircle2 size={14} /> 授業影響なし</div>
-          <div className="text-3xl font-bold text-emerald-600 mt-2">{analytics.noLessonImpactRate}<span className="text-sm text-slate-400 ml-1">%</span></div>
+          <div className="text-xs font-bold text-slate-600 flex items-center gap-1.5"><CheckCircle2 size={14} /> 授業影響なし</div>
+          <div className="text-3xl font-bold text-emerald-700 mt-2">{analytics.noLessonImpactRate}<span className="text-sm text-slate-600 ml-1">%</span></div>
         </div>
       </div>
 
       <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
-        <div className="p-2 bg-white text-amber-500 rounded-xl shadow-sm"><Lightbulb size={20} /></div>
+        <div className="p-2 bg-white text-amber-700 rounded-xl shadow-sm"><Lightbulb size={20} /></div>
         <div>
           <div className="text-xs font-bold text-amber-700 mb-1">支援につなげるヒント</div>
           <p className="text-sm text-amber-900 font-bold leading-relaxed">{insight}</p>
-          <p className="text-[11px] text-amber-700/70 mt-1">自動診断ではありません。記録を確認するきっかけとしてお使いください。</p>
+          <p className="text-[11px] text-amber-800 mt-1">自動診断ではありません。記録を確認するきっかけとしてお使いください。</p>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-5">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <h4 className="font-bold text-slate-800 flex items-center gap-2"><ClipboardPlus size={19} className="text-red-500" /> かんたん記録</h4>
-            <p className="text-xs text-slate-400 font-bold mt-1">必須項目を選んで記録してください</p>
+            <h4 className="font-bold text-slate-800 flex items-center gap-2"><ClipboardPlus size={19} className="text-red-700" /> かんたん記録</h4>
+            <p className="text-xs text-slate-600 font-bold mt-1">必須項目を選んで記録してください</p>
           </div>
           <input
             aria-label="記録日"
@@ -144,27 +144,27 @@ export default function ForgottenItemsPanel({ students, records, setRecords, sho
         </div>
 
         {students.length === 0 ? (
-          <div className="border border-dashed border-slate-300 rounded-2xl p-6 text-center text-slate-500 font-bold text-sm">
+          <div className="border border-dashed border-slate-300 rounded-2xl p-6 text-center text-slate-600 font-bold text-sm">
             先に「名簿管理」で児童を登録してください。
           </div>
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <label className="space-y-1.5">
-                <span className="text-xs font-bold text-slate-500">児童</span>
+                <span className="text-xs font-bold text-slate-600">児童</span>
                 <select value={form.studentId} onChange={event => updateForm({ studentId: event.target.value })} className={fieldClass}>
                   <option value="">選択してください</option>
                   {students.map(student => <option key={student.id} value={student.id}>{student.id}. {student.name}</option>)}
                 </select>
               </label>
               <label className="space-y-1.5">
-                <span className="text-xs font-bold text-slate-500">教科</span>
+                <span className="text-xs font-bold text-slate-600">教科</span>
                 <select value={form.subject} onChange={event => updateForm({ subject: event.target.value })} className={fieldClass}>
                   {SUBJECTS.map(subject => <option key={subject}>{subject}</option>)}
                 </select>
               </label>
               <label className="space-y-1.5">
-                <span className="text-xs font-bold text-slate-500">時限</span>
+                <span className="text-xs font-bold text-slate-600">時限</span>
                 <select value={form.period} onChange={event => updateForm({ period: event.target.value })} className={fieldClass}>
                   {['朝', '1', '2', '3', '4', '5', '6', '放課後'].map(period => <option key={period} value={period}>{period === '朝' || period === '放課後' ? period : `${period}時間目`}</option>)}
                 </select>
@@ -172,11 +172,11 @@ export default function ForgottenItemsPanel({ students, records, setRecords, sho
             </div>
 
             <div>
-              <span className="text-xs font-bold text-slate-500 block mb-2">忘れた物</span>
+              <span className="text-xs font-bold text-slate-600 block mb-2">忘れた物</span>
               <div className="flex flex-wrap gap-2">
                 {ITEM_PRESETS.map(item => (
                   <button key={item} type="button" onClick={() => updateForm({ itemPreset: item })}
-                    className={`px-3 py-2 rounded-xl border text-sm font-bold transition-all active:scale-95 ${form.itemPreset === item ? 'bg-red-500 border-red-500 text-white shadow-sm' : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'}`}>
+                    className={`tap-44 px-3 py-2 rounded-xl border text-sm font-bold transition-all active:scale-95 ${form.itemPreset === item ? 'bg-red-600 border-red-500 text-white shadow-sm' : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'}`}>
                     {item}
                   </button>
                 ))}
@@ -188,13 +188,13 @@ export default function ForgottenItemsPanel({ students, records, setRecords, sho
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <label className="space-y-1.5">
-                <span className="text-xs font-bold text-slate-500">授業への影響</span>
+                <span className="text-xs font-bold text-slate-600">授業への影響</span>
                 <select value={form.impact} onChange={event => updateForm({ impact: event.target.value })} className={fieldClass}>
                   {IMPACTS.map(impact => <option key={impact}>{impact}</option>)}
                 </select>
               </label>
               <label className="space-y-1.5">
-                <span className="text-xs font-bold text-slate-500">その場の対応</span>
+                <span className="text-xs font-bold text-slate-600">その場の対応</span>
                 <select value={form.response} onChange={event => updateForm({ response: event.target.value })} className={fieldClass}>
                   {RESPONSES.map(response => <option key={response}>{response}</option>)}
                 </select>
@@ -202,11 +202,11 @@ export default function ForgottenItemsPanel({ students, records, setRecords, sho
             </div>
 
             <label className="space-y-1.5 block">
-              <span className="text-xs font-bold text-slate-500">事実メモ（任意）</span>
+              <span className="text-xs font-bold text-slate-600">事実メモ（任意）</span>
               <input value={form.note} onChange={event => updateForm({ note: event.target.value })} placeholder="例：予備を渡すと授業に参加できた" className={fieldClass} />
             </label>
 
-            <button type="submit" className="w-full bg-red-500 hover:bg-red-400 text-white font-bold py-3.5 rounded-xl shadow-md transition-all active:scale-[0.99] flex items-center justify-center gap-2">
+            <button type="submit" className="w-full bg-red-600 hover:bg-red-400 text-white font-bold py-3.5 rounded-xl shadow-md transition-all active:scale-[0.99] flex items-center justify-center gap-2">
               <ClipboardPlus size={19} /> この内容で記録
             </button>
           </>
@@ -222,27 +222,27 @@ export default function ForgottenItemsPanel({ students, records, setRecords, sho
           <div className="p-10 text-center">
             <CheckCircle2 size={36} className="mx-auto text-emerald-400 mb-3" />
             <p className="font-bold text-slate-600">この日の忘れ物記録はありません</p>
-            <p className="text-xs text-slate-400 mt-1">記録がないことも、クラスの大切な状態です。</p>
+            <p className="text-xs text-slate-600 mt-1">記録がないことも、クラスの大切な状態です。</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
             {dailyRecords.map(record => (
               <div key={record.id} className="p-4 flex items-start gap-3 hover:bg-slate-50 transition-colors">
-                <div className="p-2.5 bg-red-50 text-red-500 rounded-xl"><Backpack size={20} /></div>
+                <div className="p-2.5 bg-red-50 text-red-700 rounded-xl"><Backpack size={20} /></div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-slate-800">{record.studentName}</span>
                     <span className="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">{record.itemName}</span>
-                    <span className="text-xs text-slate-400 font-bold">{record.subject}・{record.period === '朝' || record.period === '放課後' ? record.period : `${record.period}時間目`}</span>
+                    <span className="text-xs text-slate-600 font-bold">{record.subject}・{record.period === '朝' || record.period === '放課後' ? record.period : `${record.period}時間目`}</span>
                   </div>
                   <div className="flex gap-2 flex-wrap mt-2 text-xs font-bold">
-                    <span className={record.impact === '影響なし' ? 'text-emerald-600' : 'text-amber-600'}>{record.impact}</span>
-                    <span className="text-slate-300">•</span>
-                    <span className="text-slate-500">{record.response}</span>
+                    <span className={record.impact === '影響なし' ? 'text-emerald-700' : 'text-amber-700'}>{record.impact}</span>
+                    <span className="text-slate-600">•</span>
+                    <span className="text-slate-600">{record.response}</span>
                   </div>
-                  {record.note && <p className="text-xs text-slate-500 mt-2 leading-relaxed">{record.note}</p>}
+                  {record.note && <p className="text-xs text-slate-600 mt-2 leading-relaxed">{record.note}</p>}
                 </div>
-                <button type="button" onClick={() => handleDelete(record)} aria-label="記録を削除" className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                <button type="button" onClick={() => handleDelete(record)} aria-label="記録を削除" className="p-2 text-slate-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors">
                   <Trash2 size={17} />
                 </button>
               </div>

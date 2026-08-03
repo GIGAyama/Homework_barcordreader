@@ -16,17 +16,17 @@ import {
 import { buildDailyOperations, buildHandoverBrief } from './dailyOperations';
 
 const GROUPS = [
-  { id: '朝の確認', label: '朝の確認', Icon: HeartPulse, color: 'text-orange-500', bg: 'bg-orange-50 border-orange-100' },
-  { id: '提出・授業', label: '提出・授業', Icon: Backpack, color: 'text-red-500', bg: 'bg-red-50 border-red-100' },
-  { id: '連携・振り返り', label: '連携・振り返り', Icon: MessageSquare, color: 'text-blue-500', bg: 'bg-blue-50 border-blue-100' },
-  { id: '今日の状態', label: '今日の状態', Icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-50 border-emerald-100' },
+  { id: '朝の確認', label: '朝の確認', Icon: HeartPulse, color: 'text-orange-700', bg: 'bg-orange-50 border-orange-100' },
+  { id: '提出・授業', label: '提出・授業', Icon: Backpack, color: 'text-red-700', bg: 'bg-red-50 border-red-100' },
+  { id: '連携・振り返り', label: '連携・振り返り', Icon: MessageSquare, color: 'text-blue-700', bg: 'bg-blue-50 border-blue-100' },
+  { id: '今日の状態', label: '今日の状態', Icon: CheckCircle2, color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-100' },
 ];
 
 const MetricCard = ({ label, value, note, Icon, color }) => (
   <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-    <div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-slate-400">{label}</span><Icon size={18} className={color} /></div>
+    <div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-slate-600">{label}</span><Icon size={18} className={color} /></div>
     <p className="text-3xl font-bold text-slate-800 mt-2">{value}</p>
-    <p className="text-[11px] text-slate-400 font-bold mt-1">{note}</p>
+    <p className="text-[11px] text-slate-600 font-bold mt-1">{note}</p>
   </div>
 );
 
@@ -74,22 +74,22 @@ export default function OperationsCenterPanel({ db, today, onNavigate, showToast
         <div className="relative z-10 max-w-3xl">
           <span className="inline-flex items-center gap-1.5 text-xs font-bold bg-white/15 px-3 py-1 rounded-full mb-3"><Sparkles size={14} /> 今日やることを一か所に</span>
           <h3 className="text-2xl font-bold">今日の校務オペレーション</h3>
-          <p className="text-sm font-bold text-slate-300 mt-2 leading-relaxed">朝の確認から提出、授業中の記録、家庭・支援のフォローまで、今日の行動を優先順に整理します。</p>
-          <p className="text-xs text-slate-400 mt-3">対象日：{today}</p>
+          <p className="text-sm font-bold text-slate-200 mt-2 leading-relaxed">朝の確認から提出、授業中の記録、家庭・支援のフォローまで、今日の行動を優先順に整理します。</p>
+          <p className="text-xs text-slate-300 mt-3">対象日：{today}</p>
         </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-        <div className="flex items-center justify-between gap-3 mb-3"><div><h4 className="font-bold text-slate-800">朝の確認進捗</h4><p className="text-xs text-slate-400 mt-1">提出・きもち・出欠のいずれかが記録された児童</p></div><span className="text-3xl font-bold text-slate-900">{summary.morningRate}%</span></div>
+        <div className="flex items-center justify-between gap-3 mb-3"><div><h4 className="font-bold text-slate-800">朝の確認進捗</h4><p className="text-xs text-slate-600 mt-1">提出・きもち・出欠のいずれかが記録された児童</p></div><span className="text-3xl font-bold text-slate-900">{summary.morningRate}%</span></div>
         <div className="h-3 bg-slate-100 rounded-full overflow-hidden"><div className={`h-full rounded-full transition-all ${summary.morningRate === 100 ? 'bg-emerald-500' : summary.morningRate >= 70 ? 'bg-amber-400' : 'bg-red-400'}`} style={{ width: `${summary.morningRate}%` }} /></div>
-        <p className="text-xs font-bold text-slate-500 mt-2">{summary.students}名中 {summary.morningConfirmed}名確認済み</p>
+        <p className="text-xs font-bold text-slate-600 mt-2">{summary.students}名中 {summary.morningConfirmed}名確認済み</p>
       </div>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-        <MetricCard label="きもちの個別確認" value={`${summary.challenging}名`} note="今日の最新チェックイン" Icon={HeartPulse} color="text-orange-500" />
-        <MetricCard label="提出の残り" value={`${summary.submissionGaps}回`} note="欠席児童を除く" Icon={ClipboardCheck} color="text-emerald-500" />
-        <MetricCard label="今日の忘れ物" value={`${summary.forgotten}件`} note="授業中の記録" Icon={Backpack} color="text-red-500" />
-        <MetricCard label="期限付きフォロー" value={`${summary.dueFollowUps}件`} note="支援・家庭・学級改善" Icon={Clock3} color="text-blue-500" />
+        <MetricCard label="きもちの個別確認" value={`${summary.challenging}名`} note="今日の最新チェックイン" Icon={HeartPulse} color="text-orange-700" />
+        <MetricCard label="提出の残り" value={`${summary.submissionGaps}回`} note="欠席児童を除く" Icon={ClipboardCheck} color="text-emerald-700" />
+        <MetricCard label="今日の忘れ物" value={`${summary.forgotten}件`} note="授業中の記録" Icon={Backpack} color="text-red-700" />
+        <MetricCard label="期限付きフォロー" value={`${summary.dueFollowUps}件`} note="支援・家庭・学級改善" Icon={Clock3} color="text-blue-700" />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
@@ -99,13 +99,13 @@ export default function OperationsCenterPanel({ db, today, onNavigate, showToast
           const Icon = group.Icon;
           return (
             <section key={group.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-              <div className={`p-4 border-b flex items-center justify-between gap-3 ${group.bg}`}><h4 className={`font-bold flex items-center gap-2 ${group.color}`}><Icon size={18} /> {group.label}</h4><span className="text-xs font-bold bg-white/80 text-slate-500 px-2 py-1 rounded-full">{groupActions.length}件</span></div>
+              <div className={`p-4 border-b flex items-center justify-between gap-3 ${group.bg}`}><h4 className={`font-bold flex items-center gap-2 ${group.color}`}><Icon size={18} /> {group.label}</h4><span className="text-xs font-bold bg-white text-slate-700 px-2 py-1 rounded-full">{groupActions.length}件</span></div>
               <div className="divide-y divide-slate-100">
                 {groupActions.map(action => (
                   <article key={action.id} className="p-4">
-                    <div className="flex items-start justify-between gap-3"><h5 className="font-bold text-sm text-slate-800">{action.title}</h5>{action.priority >= 3 && <span className="text-[10px] font-bold bg-red-100 text-red-600 px-2 py-1 rounded-full whitespace-nowrap">優先</span>}</div>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">{action.detail}</p>
-                    <button type="button" onClick={() => onNavigate(action.route)} className="text-xs font-bold text-blue-600 hover:text-blue-500 mt-3 flex items-center gap-1">該当画面を開く <ArrowRight size={13} /></button>
+                    <div className="flex items-start justify-between gap-3"><h5 className="font-bold text-sm text-slate-800">{action.title}</h5>{action.priority >= 3 && <span className="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-1 rounded-full whitespace-nowrap">優先</span>}</div>
+                    <p className="text-xs text-slate-600 mt-2 leading-relaxed">{action.detail}</p>
+                    <button type="button" onClick={() => onNavigate(action.route)} className="tap-44 text-xs font-bold text-blue-700 hover:text-blue-700 mt-3 flex items-center gap-1">該当画面を開く <ArrowRight size={13} /></button>
                   </article>
                 ))}
               </div>
@@ -116,8 +116,8 @@ export default function OperationsCenterPanel({ db, today, onNavigate, showToast
 
       <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div><h4 className="font-bold text-slate-800 flex items-center gap-2"><Users size={18} className="text-blue-500" /> 校内引き継ぎブリーフ</h4><p className="text-xs text-slate-400 mt-1">専科、支援員、代理の先生へ、今日の確認事項を短い文章で共有できます。</p></div>
-          <div className="flex gap-2"><button type="button" onClick={() => setShowBrief(value => !value)} className="px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-200">{showBrief ? '閉じる' : '内容を確認'}</button><button type="button" onClick={copyBrief} className="px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-500 flex items-center gap-2"><ClipboardCopy size={16} /> コピー</button></div>
+          <div><h4 className="font-bold text-slate-800 flex items-center gap-2"><Users size={18} className="text-blue-700" /> 校内引き継ぎブリーフ</h4><p className="text-xs text-slate-600 mt-1">専科、支援員、代理の先生へ、今日の確認事項を短い文章で共有できます。</p></div>
+          <div className="flex gap-2"><button type="button" onClick={() => setShowBrief(value => !value)} className="tap-44 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-200">{showBrief ? '閉じる' : '内容を確認'}</button><button type="button" onClick={copyBrief} className="tap-44 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-600 flex items-center gap-2"><ClipboardCopy size={16} /> コピー</button></div>
         </div>
         {showBrief && <div className="border-t border-slate-100 p-4 bg-slate-50"><pre className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700 font-sans bg-white border border-slate-200 rounded-xl p-4 select-text">{brief}</pre></div>}
       </section>

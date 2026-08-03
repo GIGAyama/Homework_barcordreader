@@ -9,24 +9,36 @@
  *   以前はここで caches.keys() の結果を全部消していた。そのため
  *   このアプリを開くたびに、同じ端末に入っている他の GIGA アプリの
  *   キャッシュまで巻き添えで消え、それらがオフラインで起動しなくなっていた。
+ *
+ * Service Worker は localStorage を一切操作しない。
  */
 const CACHE_PREFIX = 'shukudai-post-';
-const APP_VERSION = 'v2';   // ← リリースごとに必ず上げる
+const APP_VERSION = 'v3';   // ← リリースごとに必ず上げる
 const CACHE_NAME = CACHE_PREFIX + APP_VERSION;
 const PRECACHE_URLS = [
   './',
   './manifest.webmanifest',
+  './offline.html',
   './favicon.png',
+  './apple-touch-icon.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(PRECACHE_URLS))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    // addAll は1本でも取れないと全部落ちる。校内 Wi-Fi が混んでいるときに
+    // 「1つ取りこぼしたせいでオフライン対応が丸ごと入らない」のを避けるため、
+    // 個別に入れて、取れなかったものだけ飛ばす。
+    await Promise.all(PRECACHE_URLS.map((u) =>
+      cache.add(new Request(u, { cache: 'reload' }))
+        .catch((err) => console.warn('[sw] precache skipped', u, err))));
+    // ここでは skipWaiting しない。
+    // 児童がバーコードを読ませている最中に画面が突然入れ替わると、
+    // 打ちかけの入力が消える。画面側で「さいしんに する」を押してもらってから
+    // 切り替える（下の message を参照）。
+  })());
 });
 
 self.addEventListener('activate', (event) => {
@@ -66,7 +78,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // ページ遷移: ネットワーク優先（最新版を取得）、オフライン時はキャッシュ
+  // ページ遷移: ネットワーク優先（最新版を取得）、オフライン時はキャッシュ。
+  // キャッシュにも無ければ offline.html を返す。ここを Response.error() のままに
+  // すると、児童には「アプリが壊れた」ようにしか見えない。
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
@@ -75,7 +89,9 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((c) => c.put('./', copy));
           return res;
         })
-        .catch(() => caches.match('./'))
+        .catch(async () => (await caches.match('./'))
+          || (await caches.match('./offline.html'))
+          || Response.error())
     );
     return;
   }
@@ -93,4 +109,9 @@ self.addEventListener('fetch', (event) => {
       });
     })
   );
+});
+
+// 画面側で「さいしんに する」が押されたときだけ切り替える
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
