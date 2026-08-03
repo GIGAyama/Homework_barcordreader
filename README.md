@@ -198,13 +198,25 @@
 
 ## 🛠️ 開発者向け情報 (For Developers)
 
-本プロジェクトは React + Tailwind CSS (単一ファイル `App.jsx` 構成) で構築されています。 開発環境を立ち上げるには、Vite や StackBlitz 等を利用してください。
+本プロジェクトは Vite + React + Tailwind CSS v4 で構築され、GitHub Pages（`/Homework_barcordreader/`）で配信しています。
+
+```bash
+npm ci          # 依存を入れる
+npm run dev     # 開発サーバー
+npm run check   # 静的解析 → テスト → 本番ビルド → 品質ゲート
+npm run icons   # アイコンを作り直す（元絵を差し替えたときだけ）
+```
+
+> ⚠️ **リリースするときは `public/sw.js` の `APP_VERSION` を必ず1つ上げてください。**
+> 上げ忘れると、児童の端末に古い版が残ったままになります。
+
+`code.gs` は Google Apps Script 版の実装で、**現在は使っていません**（扱いは [AUDIT.md](./AUDIT.md) の §7-1）。
 
 ### 使用技術
 
 *   React (Hooks)
     
-*   Tailwind CSS (CDN経由)
+*   Tailwind CSS v4（`@tailwindcss/vite`）
     
 *   Lucide React (アイコン)
     
@@ -216,11 +228,15 @@
 
 ### 品質チェック
 
-Pull Requestとmainへのpushでは、GitHub Actionsが静的解析、ロジックテスト、本番ビルドを必須チェックとして実行します。ローカルでは次のコマンドで同じ検証を実行できます。
+Pull Requestとmainへのpushでは、GitHub Actionsが静的解析、ロジックテスト、本番ビルド、GIGA Standard v4 の機械検査を必須チェックとして実行します。ローカルでは次のコマンドで同じ検証を実行できます。
 
 ```bash
 npm run check
 ```
+
+検査に落ちたときは、検査をゆるめるのではなく `quality.config.json` の `gigaV4.exceptions` / `securityExceptions` に**理由を書いて**明示的に許可してください。
+
+表示・PWA・アクセシビリティの実測結果は [AUDIT.md](./AUDIT.md) に、教室での使い方と困ったときの対処は [MANUAL.md](./MANUAL.md) にあります。
     
 
 ## ©️ 開発・提供 (Author)

@@ -12,11 +12,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   </React.StrictMode>
 );
 
-// 📲 PWA: Service Worker の登録（本番ビルドのみ）
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker
-      .register(`${import.meta.env.BASE_URL}sw.js`)
-      .catch((error) => console.error('Service Worker の登録に失敗しました:', error));
-  });
-}
+// 📲 PWA: Service Worker の登録は src/PwaPrompts.jsx の <UpdateBanner /> が行う。
+//    登録と「あたらしい ばんが あります」の案内を別々の場所に置くと、
+//    更新が入ったのに誰にも気づかれない状態になりやすいので、一体にしてある。

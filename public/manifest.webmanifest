@@ -3,12 +3,19 @@
   "short_name": "宿題ポスト",
   "description": "宿題の提出確認と朝の健康観察（きもちメーター）を一瞬で完了できる教室用アプリ",
   "lang": "ja",
+  "dir": "ltr",
+  "id": "/Homework_barcordreader/",
   "start_url": "/Homework_barcordreader/",
   "scope": "/Homework_barcordreader/",
   "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "minimal-ui"],
+  "launch_handler": {
+    "client_mode": ["navigate-existing", "auto"]
+  },
   "orientation": "any",
   "background_color": "#fef2f2",
   "theme_color": "#ef4444",
+  "categories": ["education", "kids"],
   "icons": [
     {
       "src": "icons/icon-192.png",
