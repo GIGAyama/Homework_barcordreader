@@ -19,10 +19,21 @@
 export function registerServiceWorker(onUpdateReady) {
   if (!('serviceWorker' in navigator)) return;
 
-  // controllerchange は「切り替えが済んだ」合図。ここで1回だけ再読み込みする。
+  // 「さいしんに する」を押したときだけ、切り替え完了を待って再読み込みする。
+  //
+  // controllerchange は、はじめて開いたときにも飛んでくる。Service Worker が
+  // activate で clients.claim() を呼ぶと、それまで管理下になかったページが
+  // 管理下に入り、この合図が出るため。これを素直に受けると
+  // **初回訪問が必ず1回リロードされる**（実測で「初回の画面遷移が2回」だった）。
+  // 朝の受付でいえば、開いた直後に画面が作り直される。
+  //
+  // 「もともと管理下だったか」で分けるのも間違い。入れた直後に更新を押した場合、
+  // 今度は切り替わったのに読み込み直されなくなる（これも実測で踏んだ）。
+  // 見るべきは **利用者が押したかどうか** だけ。
+  let userAskedUpdate = false;
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloading) return;
+    if (!userAskedUpdate || reloading) return;
     reloading = true;
     window.location.reload();
   });
@@ -38,7 +49,10 @@ export function registerServiceWorker(onUpdateReady) {
       .then((registration) => {
         const notify = (worker) => {
           if (!worker) return;
-          onUpdateReady(() => worker.postMessage({ type: 'SKIP_WAITING' }));
+          onUpdateReady(() => {
+            userAskedUpdate = true;
+            worker.postMessage({ type: 'SKIP_WAITING' });
+          });
         };
 
         // すでに新しい版が待っている（前回のうちに入っていた）場合
