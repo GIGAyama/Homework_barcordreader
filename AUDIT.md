@@ -18,8 +18,8 @@
 | タップ44px未満 | **42件**（13画面） | **0件** |
 | CSP違反・JSエラー | 0 / 1件 | 0 / 0件 |
 | 画像の合計 | 493.1 KB | **100.4 KB**（-79.6%） |
-| Service Worker の登録 | **一度も登録されない**（§3） | 登録・有効化を確認 |
-| オフライン起動 | 未確認 | 起動する（実測） |
+| Service Worker の登録 | 登録されていた（§3 に訂正あり） | 登録・有効化を実測で確認 |
+| オフライン起動 | 未計測 | 起動する（実測） |
 | 圏外＋本体未取得 | 白画面 | offline.html が出る（実測） |
 | 更新の通知 | 無し（黙って入れ替わる） | 「さいしんに する」を押すまで切り替わらない（実測） |
 | maskable アイコン | 桃色の余白付き | 下地を全面に。セーフゾーン外の中身 **0.02%** |
@@ -37,53 +37,57 @@
 
 ---
 
-## 3. いちばん重い発見：Service Worker が一度も登録されていなかった
+## 3. 訂正：Service Worker は元から登録されていた
 
-改修前の `src/main.jsx` はこう書かれていた。
+**このファイルの以前の版には誤りがあった。** 「改修前は Service Worker が一度も
+登録されておらず、オフライン対応が入っていなかった」と書いたが、**これは事実ではない。**
+元のコードは正しく登録していた。
+
+実際に起きていたのは、**この改修の途中で自分が入れた退行**だった。
+登録と「あたらしい版があります」の案内を一体で扱うため、登録を `src/main.jsx` から
+React 側（`src/PwaPrompts.jsx` の `useEffect`）へ移したところ、登録されなくなった。
+その状態を測って「改修前の姿」と取り違えたのが誤りの中身。
+
+3通りをそれぞれビルドして実測した結果がこれ。
+
+| 登録を書いた場所 | 結果 |
+|---|---|
+| `main.jsx` の一番外側で `load` を待つ（**改修前のコード**） | `{"登録":true,"active":true,"キャッシュ":["shukudai-post-v2"]}` |
+| React の `useEffect` の中で `load` を待つ（**改修の途中**） | `{"登録":false,"active":false,"キャッシュ":[]}` |
+| `useEffect` の中で `readyState` を見てから待つ（**現在**） | `{"登録":true,"active":true,"キャッシュ":["shukudai-post-v3"]}` |
+
+理由ははっきりしている。モジュールとして読み込まれる `main.jsx` の本体は
+`load` より前に走るのでリスナーが間に合うが、React の effect は描画のあとに走るため、
+そのとき `load` はすでに終わっている。
 
 ```js
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register(...)
-  });
-}
+// 動く：load より前にリスナーを付けられる
+window.addEventListener('load', () => { navigator.serviceWorker.register(...) });
+
+// 動かない：effect は描画のあと。そのとき load は終わっている
+useEffect(() => {
+  window.addEventListener('load', () => { navigator.serviceWorker.register(...) });
+}, []);
 ```
 
-`main.jsx` はモジュールとして読み込まれ、React の初回描画のあとに実行される。
-そのときには `load` がすでに発火し終わっていることがあり、
-**登録関数が一度も呼ばれない。**
-
-実測でこうなった。
-
-```
-"ServiceWorker": { "登録": false },
-"キャッシュ一覧": []
-```
-
-つまり、このアプリには **オフライン対応が入っていなかった**。
-`public/sw.js` は書かれていたが、動いていなかった。
-`sw.js` を読んで確かめるだけでは絶対に気づけない種類の不具合で、
-**ブラウザで登録状態を問い合わせて初めて分かった。**
-
-直し方は「もう `load` が済んでいるならその場で走らせる」だけ。
+現在は必ずこう書いている。
 
 ```js
 if (document.readyState === 'complete') start();
 else window.addEventListener('load', start, { once: true });
 ```
 
-直したあとの実測。
+### この件から残しておくこと
 
-```
-"ServiceWorker": { "登録": true, "active": true,
-                   "scope": "http://127.0.0.1:8971/Homework_barcordreader/" },
-"キャッシュ一覧": ["shukudai-post-v3"]
-```
+1. **登録を React 側へ移す改修は自然に発生する。** 登録と更新案内は一体で扱いたくなる。
+   そのとき `readyState` の分岐が無いと、**ビルドも静的解析も通ったまま静かに壊れる。**
+2. **`sw.js` を読んでも分からない。** ブラウザに `navigator.serviceWorker.getRegistration()`
+   を問い合わせて初めて出る。表示に関わる改修をしたら、必ず実機・実ブラウザで確かめること。
+3. **測った状態が「改修前」なのか「改修の途中」なのかを取り違えない。**
+   比較するなら、比較対象のコミットを実際にビルドして測ること。今回はそれを怠った。
 
-> **他リポジトリでも確かめること。** `window.addEventListener('load', ...)` で
-> Service Worker を登録している形は、この一群のアプリでよく使われている。
-
----
+改修前の Service Worker にも直すべき点はあった（§5-7 の `skipWaiting()` と
+§5-9 の `offline.html`）。ただしそれは「動いていなかった」という話ではない。
 
 ## 4. セキュリティ（P0）
 
