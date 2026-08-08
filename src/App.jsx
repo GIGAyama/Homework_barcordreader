@@ -251,8 +251,13 @@ const generateReportData = (
   const taskActiveWeeks = {};
   tasks.forEach(t => { taskRequirements[t.id] = 0; taskActiveWeeks[t.id] = new Set(); });
 
+  // 必要回数は「もう過ぎた日」までしか数えない。
+  // 既定の集計期間は今月の1日から末日なので、月の途中で保護者面談サマリーを出すと、
+  // まだ来ていない日まで未提出として数えられ、提出率が実態より低く出てしまっていた。
+  // 有効期間（開始日・終了日）やおやすみ日と同じ考え方で、未来の日は必要回数に数えない。
+  const todayStr = getLocalDateString();
   const currentDate = parseLocalDate(startDate);
-  const end = parseLocalDate(endDate);
+  const end = parseLocalDate(endDate > todayStr ? todayStr : endDate);
 
   while (currentDate <= end) {
     const dateStr = getLocalDateString(currentDate);
