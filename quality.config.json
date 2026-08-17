@@ -42,9 +42,8 @@
   },
   "gigaV4": {
     "enabled": true,
-
-    "_basePath": "gigayama.github.io は多数のアプリが同一オリジンを共有している。manifest の id / scope / start_url がここから外れると、別アプリと取り違えられて『開いたら違うアプリが立ち上がる』事故が起きる。",
-    "basePath": "/Homework_barcordreader/",
+    "_basePath": "manifest の id/scope/start_url に期待する値。独自ドメインではアプリは homework-barcordreader.giga-school.com の直下で配信されるので相対パス \"./\"。リポジトリ名の絶対パスに戻すと scope がページの URL を含まなくなり、PWA としてインストールできなくなる。vite.config.js の base と同じ値にすること.",
+  "basePath": "./",
 
     "_assetLimits": "画像の上限バイト数。アイコンだけで初回転送を占有しないための歯止め。",
     "assetLimits": {
