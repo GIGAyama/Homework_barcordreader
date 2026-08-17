@@ -4,9 +4,9 @@
   "description": "宿題の提出確認と朝の健康観察（きもちメーター）を一瞬で完了できる教室用アプリ",
   "lang": "ja",
   "dir": "ltr",
-  "id": "/Homework_barcordreader/",
-  "start_url": "/Homework_barcordreader/",
-  "scope": "/Homework_barcordreader/",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "display_override": ["standalone", "fullscreen", "minimal-ui"],
   "launch_handler": {
