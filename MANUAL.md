@@ -9,7 +9,7 @@
 
 ### 1-1. アプリを開く
 
-<https://gigayama.github.io/Homework_barcordreader/> を開きます。
+<https://homework-barcordreader.giga-school.com/> を開きます。
 
 ### 1-2. ホーム画面に入れる（強くおすすめ）
 
