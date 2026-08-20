@@ -6,7 +6,11 @@ GitHub Pagesで動く「宿題ポスト」からGemini APIキーを隔離する�
 
 - `GEMINI_API_KEY`: Google AI Studioで発行したキー。Cloud RunのSecret Manager参照として設定します。
 - `AI_GATEWAY_TOKEN`: 24文字以上のランダム値。教室端末のAI設定にも同じ値を登録します。
-- `ALLOWED_ORIGIN`: 宿題ポストの完全なOrigin。複数はカンマ区切り（例: `https://gigayama.github.io,http://localhost:5173`）。
+- `ALLOWED_ORIGIN`: 宿題ポストの完全なOrigin。複数はカンマ区切り（例: `https://homework-barcordreader.giga-school.com,http://localhost:5173`）。
+
+  > ⚠️ **ドメインを変えたら、ここも必ず変えること。** Origin の完全一致で照合するため、
+  > 旧オリジンのままだと新しいアドレスからの呼び出しが CORS で弾かれ、
+  > **AI の機能だけが動かなくなる**（アプリ自体は普通に開けるので原因が分かりにくい）。
 - `GEMINI_MODEL`: 任意。既定値は `gemini-3.5-flash`。
 - `AI_RATE_LIMIT`: 任意。15分あたりの上限。既定値は30回。
 
@@ -17,7 +21,7 @@ gcloud run deploy shukudai-post-ai \
   --source server/gemini-proxy \
   --region asia-northeast1 \
   --allow-unauthenticated \
-  --set-env-vars ALLOWED_ORIGIN=https://gigayama.github.io \
+  --set-env-vars ALLOWED_ORIGIN=https://homework-barcordreader.giga-school.com \
   --set-secrets GEMINI_API_KEY=shukudai-post-gemini-key:latest,AI_GATEWAY_TOKEN=shukudai-post-ai-token:latest
 ```
 

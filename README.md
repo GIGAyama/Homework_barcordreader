@@ -116,7 +116,7 @@
 
 このアプリは GitHub Pages で公開されています。以下のURLをiPadやPCのブラウザで開いてください。
 
-> 👉 **[宿題ポストを開く](https://gigayama.github.io/Homework_barcordreader/)**
+> 👉 **[宿題ポストを開く](https://homework-barcordreader.giga-school.com/)**
 
 **💡 おすすめの運用方法：** 教室のiPadでURLを開き、Safariの「ホーム画面に追加」機能を使ってアプリアイコンを作成すると、全画面表示になり本物のアプリのように使えます。
 
@@ -208,7 +208,8 @@
     「APIとサービス」→「認証情報」→「認証情報を作成」→「**OAuth クライアント ID**」を選択。
     *   アプリケーションの種類: **ウェブ アプリケーション**
     *   **承認済みの JavaScript 生成元** に、アプリを公開しているURLのオリジンを追加します。
-        *   GitHub Pages の場合: `https://<ユーザー名>.github.io`（例: `https://gigayama.github.io`）
+        *   独自ドメインの場合: `https://homework-barcordreader.giga-school.com`
+        *   GitHub Pages の場合: `https://<ユーザー名>.github.io`
         *   動作確認（ローカル開発）用: `http://localhost:5173`
     *   ※「承認済みのリダイレクトURI」は不要です。
     作成後に表示される `〜〜〜.apps.googleusercontent.com` という文字列が **クライアントID** です。
