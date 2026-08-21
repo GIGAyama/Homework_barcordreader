@@ -273,7 +273,7 @@ npm run check
 
 **GIGA山** お問い合わせや活用事例などは、以下のnoteまでお寄せください。
 
-*   [note: GIGA山のページ](https://note.com/cute_borage86 "null")
+*   [GIGA山のホームページ](https://giga-school.com "null")
     
 
 *This project was inspired by the passion of teachers who want to spend more time facing their students.*
