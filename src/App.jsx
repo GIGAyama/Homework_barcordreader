@@ -381,7 +381,7 @@ const Header = ({ onAdminClick, view }) => (
 const Footer = () => (
   <footer className="w-full bg-white border-t border-slate-200 pt-3 pb-2 text-center text-sm text-slate-600 font-bold shadow-sm z-10 safe-bottom safe-x">
     © {new Date().getFullYear()} 宿題ポスト{' '}
-    <a href="https://note.com/cute_borage86" target="_blank" rel="noopener noreferrer" className="tap-44 inline-block text-inherit no-underline hover:text-slate-600 transition-colors">
+    <a href="https://giga-school.com" target="_blank" rel="noopener noreferrer" className="tap-44 inline-block text-inherit no-underline hover:text-slate-600 transition-colors">
       GIGA山
     </a>
   </footer>
