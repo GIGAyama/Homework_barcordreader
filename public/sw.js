@@ -14,17 +14,16 @@
  * Service Worker は localStorage を一切操作しない。
  */
 const CACHE_PREFIX = 'shukudai-post-';
-const APP_VERSION = 'v4';   // ← リリースごとに必ず上げる
+// APP_VERSION は手で上げない。tools/build-sw.mjs がビルド後に dist/sw.js の
+// この行を、先読み対象の内容ハッシュで書き換える（原本のここは 'dev' のまま）。
+const APP_VERSION = 'dev'; /* __APP_VERSION__ */
 const CACHE_NAME = CACHE_PREFIX + APP_VERSION;
-const PRECACHE_URLS = [
-  './',
-  './manifest.webmanifest',
-  './offline.html',
-  './favicon.png',
-  './apple-touch-icon.png',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-];
+/* 先読み一覧。tools/build-sw.mjs がビルド後に dist/ の実体から埋める
+ * （どれを入れるかは sw-build.config.json）。ビルド成果物（assets/）も
+ * 入れる。初回訪問の <script>/<link> は Service Worker より先に読み込まれて
+ * runtime キャッシュに入らないため、先読みしないと初回のあと圏外で
+ * 白い画面になる。埋め忘れは build-sw.mjs が検知してビルドを落とす。 */
+const PRECACHE_URLS = []; /* __PRECACHE_URLS__ */
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
