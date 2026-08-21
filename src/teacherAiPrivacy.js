@@ -22,7 +22,9 @@ export const createStudentAliases = (students = [], targetStudentId = null) => {
   students.forEach((student, index) => {
     const alias = student.id === targetStudentId ? '対象児童' : `児童${String.fromCharCode(65 + (index % 26))}${index >= 26 ? Math.floor(index / 26) : ''}`;
     const name = String(student.name || '').trim();
-    if (!name) return;
+    // 1文字の名前は普通の言葉と衝突する（本文の一般語まで置き換わり、
+    // 実名も守れず本文も壊れる）ため対象外にする。
+    if (name.length < 2) return;
     aliases[name] = alias;
     reverse[alias] = name;
   });
@@ -37,7 +39,7 @@ export const redactSensitiveText = (value, students = [], targetStudentId = null
     .forEach(([name, alias]) => {
       text = text.replace(new RegExp(escapeRegExp(name), 'g'), alias);
       const compact = compactName(name);
-      if (compact && compact !== name) text = text.replace(new RegExp(escapeRegExp(compact), 'g'), alias);
+      if (compact.length >= 2 && compact !== name) text = text.replace(new RegExp(escapeRegExp(compact), 'g'), alias);
     });
   return text
     .replace(EMAIL_PATTERN, '[メールアドレス]')

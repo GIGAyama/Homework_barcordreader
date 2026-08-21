@@ -57,3 +57,13 @@ test('handover and support-note builders keep names outside the outbound payload
   assert.deepEqual(findDirectIdentifiers(support.payload, db.students), []);
   assert.match(support.payload.observationMemo, /児童A|\[電話番号\]/);
 });
+
+test('one-character names are not aliased (common-word collision guard)', () => {
+  // 「光」のような1文字の名前を置き換えると、本文の一般語（「日光」「光る」等）まで
+  // 児童Xに化けて実名も守れず本文も壊れる。仮名化の対象外にする（正: gamification 07_ai.gs）。
+  const students = [{ id: '1', name: '光' }, { id: '2', name: '佐藤 太郎' }];
+  const text = redactSensitiveText('日光がまぶしい。佐藤 太郎さんは元気。', students);
+  assert.match(text, /日光がまぶしい/);
+  assert.doesNotMatch(text, /日児童/);
+  assert.match(text, /児童B/);
+});
