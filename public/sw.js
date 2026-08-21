@@ -14,7 +14,7 @@
  * Service Worker は localStorage を一切操作しない。
  */
 const CACHE_PREFIX = 'shukudai-post-';
-const APP_VERSION = 'v3';   // ← リリースごとに必ず上げる
+const APP_VERSION = 'v4';   // ← リリースごとに必ず上げる
 const CACHE_NAME = CACHE_PREFIX + APP_VERSION;
 const PRECACHE_URLS = [
   './',
