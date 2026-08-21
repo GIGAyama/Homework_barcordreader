@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node tools/build-sw.mjs",
     "preview": "vite preview",
     "test": "node --test",
     "lint": "eslint .",
