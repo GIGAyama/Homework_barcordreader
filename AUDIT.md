@@ -32,8 +32,9 @@
 **B型**（Vite + React + Tailwind v4 → GitHub Pages）。
 `base` は `/Homework_barcordreader/`。
 
-`code.gs`（439行）が残っているが、**現在このアプリでは使っていない**。
-本番は Vite + React 版を GitHub Pages で配信している。§7 に扱いを書いた。
+かつて `code.gs`（Google Apps Script 版、439行）が残っていたが、**削除した**
+（2026-08、GAS 版の廃止が確定したため。経緯は §7-1）。
+本番は Vite + React 版を GitHub Pages で配信している。
 
 ---
 
@@ -349,18 +350,15 @@ Cache Storage はドメイン単位なので `caches.keys()` は他アプリの�
 
 ## 7. 判断が要る点（人間が決めること）
 
-### 7-1. `code.gs` をどうするか
+### 7-1. `code.gs` をどうするか（決着済み）
 
-439行の Google Apps Script 実装が残っている。**現在は使っていない**（本番は React 版）。
-デプロイされないため `XFrameOptionsMode.ALLOWALL` の実害は無いが、
-品質ゲートは正しく指摘する。今回は `quality.config.json` の
-`securityExceptions.xFrameAllowAll` に**理由を書いて**許可した。
+439行の Google Apps Script 実装が残っていたが、**GAS 版の廃止が確定したため削除した**（2026-08）。
+このアプリは静的ページ（Vite + React → GitHub Pages）へ完全に移行している。
 
-選択肢は3つ。**このリポジトリの持ち主が決めること。**
+あわせて `quality.config.json` の `securityExceptions.xFrameAllowAll`（`XFrameOptionsMode.ALLOWALL`
+を許していた例外）も外した。**例外の理由になっていたファイルが無くなったので、例外も残さない。**
 
-1. 削除する（いちばんすっきりするが、履歴以外に戻せる場所が無くなる）
-2. `legacy/` に移して「使っていない」と明記する
-3. このまま残す（今回の状態）
+戻したくなったときは git の履歴から取り出せる（削除前の最終版は `code.gs` を含むコミットにある）。
 
 ### 7-2. `frame-ancestors`
 

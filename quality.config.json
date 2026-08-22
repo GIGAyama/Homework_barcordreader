@@ -26,15 +26,11 @@
     ]
   },
   "securityExceptions": {
-    "wildcardPostMessage": [],
-
-    "_xFrameAllowAll": "code.gs は Google Apps Script 版の実装で、現在このアプリでは使っていない（本番は Vite + React 版を GitHub Pages で配信している）。デプロイされないため ALLOWALL の実害は無い。ただし将来 GAS 版を再開するなら、その時点で SAMEORIGIN に直すこと。ファイル自体の扱いは AUDIT.md の『判断が要る点』に記録した。",
-    "xFrameAllowAll": ["code.gs"]
+    "wildcardPostMessage": []
   },
   "maintainability": {
     "warningLineCount": 5000,
     "warningByteCount": 400000,
-
     "_ignoreLargeFiles": "「1ファイルが大きすぎる」の警告は、人が保守するソースに向けたもの。npm が自動生成するロックファイルは対象外にする。",
     "ignoreLargeFiles": [
       "package-lock.json"
@@ -43,8 +39,7 @@
   "gigaV4": {
     "enabled": true,
     "_basePath": "manifest の id/scope/start_url に期待する値。独自ドメインではアプリは homework-barcordreader.giga-school.com の直下で配信されるので相対パス \"./\"。リポジトリ名の絶対パスに戻すと scope がページの URL を含まなくなり、PWA としてインストールできなくなる。vite.config.js の base と同じ値にすること.",
-  "basePath": "./",
-
+    "basePath": "./",
     "_assetLimits": "画像の上限バイト数。アイコンだけで初回転送を占有しないための歯止め。",
     "assetLimits": {
       "default": 153600,
@@ -55,7 +50,6 @@
       "maskable-192.png": 30720,
       "apple-touch-icon.png": 30720
     },
-
     "_exceptions": "検査を意図的に見送る項目。ゆるめるのではなく、なぜ見送るかをここに書く。空にしておくのが望ましい。",
     "exceptions": []
   }

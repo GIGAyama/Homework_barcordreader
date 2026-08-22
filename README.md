@@ -242,8 +242,6 @@ npm run icons   # アイコンを作り直す（元絵を差し替えたとき�
 > ⚠️ **リリースするときは `public/sw.js` の `APP_VERSION` を必ず1つ上げてください。**
 > 上げ忘れると、児童の端末に古い版が残ったままになります。
 
-`code.gs` は Google Apps Script 版の実装で、**現在は使っていません**（扱いは [AUDIT.md](./AUDIT.md) の §7-1）。
-
 ### 使用技術
 
 *   React (Hooks)
