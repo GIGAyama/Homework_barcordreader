@@ -378,12 +378,27 @@ const Header = ({ onAdminClick, view }) => (
   </nav>
 );
 
+// 法務ページはアプリと同じ配信元に静的 HTML として置いてある（privacy.html / terms.html）。
+// 相対リンクにしているのは、独自ドメインでも github.io でも同じ書き方で届くため。
+// React のルーティングは通さない。ページ自体がアプリと独立した1枚の HTML なので、
+// 圏外でも読める代わりに、開くとアプリからは離れる。
 const Footer = () => (
   <footer className="w-full bg-white border-t border-slate-200 pt-3 pb-2 text-center text-sm text-slate-600 font-bold shadow-sm z-10 safe-bottom safe-x">
-    © {new Date().getFullYear()} 宿題ポスト{' '}
-    <a href="https://giga-school.com" target="_blank" rel="noopener noreferrer" className="tap-44 inline-block text-inherit no-underline hover:text-slate-600 transition-colors">
-      GIGA山
-    </a>
+    <div>
+      © {new Date().getFullYear()} 宿題ポスト{' '}
+      <a href="https://giga-school.com" target="_blank" rel="noopener noreferrer" className="tap-44 inline-block text-inherit no-underline hover:text-slate-600 transition-colors">
+        GIGA山
+      </a>
+    </div>
+    <div className="mt-1 font-normal text-xs text-slate-500">
+      <a href="./privacy.html" className="tap-44 inline-block text-inherit underline hover:text-slate-700 transition-colors">
+        プライバシーポリシー
+      </a>
+      <span className="mx-2" aria-hidden="true">/</span>
+      <a href="./terms.html" className="tap-44 inline-block text-inherit underline hover:text-slate-700 transition-colors">
+        利用規約
+      </a>
+    </div>
   </footer>
 );
 

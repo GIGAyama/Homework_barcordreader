@@ -81,15 +81,27 @@ self.addEventListener('fetch', (event) => {
   // ページ遷移: ネットワーク優先（最新版を取得）、オフライン時はキャッシュ。
   // キャッシュにも無ければ offline.html を返す。ここを Response.error() のままに
   // すると、児童には「アプリが壊れた」ようにしか見えない。
+  //
+  // 保存先は「アプリ本体か、それ以外のページか」で分ける。
+  // 以前はどのページも './' に上書きしていた。同じオリジンに privacy.html と
+  // terms.html が並んだ今、それでは法務ページを一度開いただけで
+  // アプリ本体のキャッシュがそのページに置き換わり、次に圏外でアプリを開いた
+  // 児童にプライバシーポリシーが出る。
   if (request.mode === 'navigate') {
+    const isAppShell = url.pathname === new URL('./', self.location).pathname;
+    const cacheKey = isAppShell ? './' : request;
     event.respondWith(
       fetch(request)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then((c) => c.put('./', copy));
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(cacheKey, copy));
+          }
           return res;
         })
-        .catch(async () => (await caches.match('./'))
+        // 圏外では「開こうとしたページ自身」を返す。アプリ本体で代用すると、
+        // 利用規約を開いたつもりの人にアプリの画面が出ることになる。
+        .catch(async () => (await caches.match(cacheKey))
           || (await caches.match('./offline.html'))
           || Response.error())
     );
