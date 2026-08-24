@@ -389,6 +389,10 @@ const Footer = () => (
       <a href="https://giga-school.com" target="_blank" rel="noopener noreferrer" className="tap-44 inline-block text-inherit no-underline hover:text-slate-600 transition-colors">
         GIGA山
       </a>
+      {' '}
+      <a href="https://giga-school.com/apps/homework-barcordreader/" target="_blank" rel="noopener noreferrer" className="tap-44 inline-block text-inherit no-underline hover:text-slate-600 transition-colors">
+        使い方を読む
+      </a>
     </div>
     <div className="mt-1 font-normal text-xs text-slate-500">
       <a href="./privacy.html" className="tap-44 inline-block text-inherit underline hover:text-slate-700 transition-colors">
