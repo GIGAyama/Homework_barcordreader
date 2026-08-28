@@ -59,22 +59,10 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // Googleフォントなどクロスオリジンは stale-while-revalidate 的にキャッシュ
   if (url.origin !== self.location.origin) {
-    if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
-      event.respondWith(
-        caches.match(request).then((cached) => {
-          const fetched = fetch(request).then((res) => {
-            if (res.ok || res.type === 'opaque') {
-              const copy = res.clone();
-              caches.open(CACHE_NAME).then((c) => c.put(request, copy));
-            }
-            return res;
-          }).catch(() => cached);
-          return cached || fetched;
-        })
-      );
-    }
+    // 書体は自分のところから配るようになったので、ここへ来る外部の要求は無い。
+    // Google Fonts を拾う枝は消した。
+    // 戻すと「外部通信を復活させる入口」になる。
     return;
   }
 
