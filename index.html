@@ -78,6 +78,19 @@
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- 利用規約・プライバシーへの行き先。中身は正本の部品
+         standards/web/giga-app-links.js（配布物 public/giga-app-links.js）が、
+         src/App.jsx のフッターに置いた <span data-giga-links> の中に出す。
+
+         ⚠️ あのフッターは {view !== 'admin' && <Footer />} で、先生の画面へ
+            切り替えると置き場所ごと消える。部品はそれを見て出しなおす
+            （正本の watchForSlot を参照）。2026-08-29 にそこを直した。
+
+         ⚠️ data-links は置き場所の側（App.jsx）に書いてある。まだ
+            docs/manual/ が無いので「つかいかた」を外してある。 -->
+    <script src="/giga-app-links.js" defer></script>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
