@@ -383,26 +383,33 @@ const Header = ({ onAdminClick, view }) => (
 // React のルーティングは通さない。ページ自体がアプリと独立した1枚の HTML なので、
 // 圏外でも読める代わりに、開くとアプリからは離れる。
 const Footer = () => (
-  <footer className="w-full bg-white border-t border-slate-200 pt-3 pb-2 text-center text-sm text-slate-600 font-bold shadow-sm z-10 safe-bottom safe-x">
-    <div>
+  /* ⚠️ 1 行に収める。もとはクレジットと法務リンクで 2 行あり、そのぶん
+     読み取りの画面が狭かった。flex-wrap: nowrap と min-w-0 の 2 つが要る。
+     nowrap だけだと、クレジットの文字列が縮まずに列を押し広げて
+     横スクロールになる。狭い画面ではクレジットが … で切れる。 */
+  <footer className="w-full flex flex-nowrap items-center justify-center gap-1 bg-white border-t border-slate-200 py-1 text-center text-sm text-slate-600 font-bold shadow-sm z-10 safe-bottom safe-x">
+    <span className="min-w-0 truncate">
       © {new Date().getFullYear()} 宿題ポスト{' '}
       <a href="https://giga-school.com" target="_blank" rel="noopener noreferrer" className="tap-44 inline-block text-inherit no-underline hover:text-slate-600 transition-colors">
         GIGA山
       </a>
-      {' '}
-      <a href="https://giga-school.com/apps/homework-barcordreader/" target="_blank" rel="noopener noreferrer" className="tap-44 inline-block text-inherit no-underline hover:text-slate-600 transition-colors">
-        使い方を読む
-      </a>
-    </div>
-    <div className="mt-1 font-normal text-xs text-slate-500">
-      <a href="./privacy.html" className="tap-44 inline-block text-inherit underline hover:text-slate-700 transition-colors">
-        プライバシーポリシー
-      </a>
-      <span className="mx-2" aria-hidden="true">/</span>
-      <a href="./terms.html" className="tap-44 inline-block text-inherit underline hover:text-slate-700 transition-colors">
-        利用規約
-      </a>
-    </div>
+    </span>
+    {/* ⚠️ 行き先のリンクを手で書かないこと。中身は正本の部品
+        standards/web/giga-app-links.js（配布物 public/giga-app-links.js）が
+        この中に出す。文言も並びも行き先も、あちらで決まっている。
+
+        ⚠️ ここにあった「プライバシーポリシー / 利用規約」の手書きの 2 本と、
+           「使い方を読む」（紹介記事へのリンク）は外した。前者は部品が同じ
+           行き先を出すので二重になる。後者は紹介記事で、「なぜ作ったか」を
+           まだ使っていない先生に向けて書いたもの。いま画面の前で困っている
+           人が求めるものではないので、艦隊のほかのアプリでも外れている。
+
+        ⚠️ <div> にしないこと。そこで改行が入って 2 行に戻る。
+
+        ⚠️ data-links で「つかいかた」を外してある。このアプリにはまだ
+           docs/manual/ が無く、既定のまま出すと行き止まりのリンクになる。
+           マニュアルを書いたら、この属性ごと消すこと。 */}
+    <span data-giga-links data-links="terms,privacy" />
   </footer>
 );
 
