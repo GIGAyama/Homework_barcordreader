@@ -24,7 +24,22 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # npm run check の中で本番ビルドまで走る。Googleドライブ同期の
+      # OAuth クライアントIDは、そのビルドのときに埋めこむ。
+      #
+      # リポジトリの Settings > Secrets and variables > Actions > Variables に
+      # VITE_GOOGLE_CLIENT_ID を登録すると、先生が画面で設定しなくても
+      # 「Googleでログインして接続」だけで使えるようになる。
+      # 未登録でもビルドは通り、同期の欄だけが使えない表示になる。
+      # 設定のしかたは GOOGLE_DRIVE_SETUP.md にある。
+      #
+      # ⚠️ Variables（変数）に置く。Secrets（秘密）ではない。
+      #    Web 向けの OAuth クライアントIDは、どのみち配信物とブラウザの通信に
+      #    出てくる公開の識別子で、隠しても意味がない。Secrets に入れると
+      #    ログで伏字になり、埋めこみを目で確かめられなくなるほうが困る。
       - run: npm run check
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

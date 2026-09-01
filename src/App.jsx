@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Mailbox, Settings, Trash2, CheckCircle2, Circle, X, Users, Activity, Plus, Check, HeartPulse, ShieldAlert, Printer, FileText, Smile, Moon, Zap, CloudRain, PartyPopper, Sparkles, GraduationCap, ClipboardList, CalendarRange, Database, Download, Upload, AlertTriangle, RefreshCw, Pencil, Save, UserCheck, UserX, Clock, PlusCircle, MinusCircle, CalendarOff, Archive, ArchiveRestore, Cloud, CloudUpload, CloudDownload, Link2, Unlink, Loader2, KeyRound, ExternalLink, Backpack, HandHeart, MessageSquare, Bot } from 'lucide-react';
 import { useGoogleDriveSync } from './useGoogleDriveSync';
+import { CLIENT_ID as DRIVE_CLIENT_ID } from './googleDrive';
 import ForgottenItemsPanel from './ForgottenItemsPanel';
 import StudentSupportPanel from './StudentSupportPanel';
 import ClassInsightsPanel from './ClassInsightsPanel';
@@ -770,9 +771,6 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
   const [newTask, setNewTask] = useState(() => ({ type: '日付指定', value: getLocalDateString(), name: '', startDate: getLocalDateString() }));
   const [newPin, setNewPin] = useState('');
   const fileInputRef = useRef(null);
-
-  // ☁️ Googleドライブ同期：クライアントID入力欄
-  const [clientIdInput, setClientIdInput] = useState(drive?.clientId || '');
 
   // 🌟 編集用ステート
   const [editingStudentId, setEditingStudentId] = useState(null);
@@ -2128,34 +2126,20 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
               </p>
 
               {!drive.clientId ? (
-                // ── クライアントID未設定：セットアップ ──
-                <div className="bg-sky-50/70 border border-sky-200 rounded-xl p-4 flex flex-col gap-3">
-                  <div className="flex items-center gap-2 text-sky-700 font-bold text-sm">
-                    <KeyRound size={16} /> はじめの設定（Google クライアントID）
+                // ── 配信物にクライアントIDが埋まっていない ──
+                // 先生に貼りつけてもらう欄はもう出さない。ここは設置した人が読むところ。
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-slate-700 font-bold text-sm">
+                    <KeyRound size={16} /> この配信では同期が使えません
                   </div>
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    Google Cloud Console で作成した「OAuth クライアントID」を貼り付けてください。設定方法は
-                    <a href="https://github.com/GIGAyama/Homework_barcordreader#-複数端末でのデータ同期googleドライブ連携" target="_blank" rel="noopener noreferrer" className="tap-44 text-sky-700 underline font-bold inline-flex items-center gap-0.5">README <ExternalLink size={11} /></a>
-                    をご覧ください。（この端末にのみ保存され、外部に送信されません）
+                    Googleドライブ同期は、配る側が公開の設定に OAuth クライアントIDを登録すると使えるようになります。学校の情報担当の先生にご相談ください。設定のしかたは
+                    <a href="https://github.com/GIGAyama/Homework_barcordreader/blob/main/GOOGLE_DRIVE_SETUP.md" target="_blank" rel="noopener noreferrer" className="tap-44 text-sky-700 underline font-bold inline-flex items-center gap-0.5">GOOGLE_DRIVE_SETUP.md <ExternalLink size={11} /></a>
+                    にあります。
                   </p>
-                  <input
-                    type="text"
-                    placeholder="xxxxxxxx.apps.googleusercontent.com"
-                    value={clientIdInput}
-                    onChange={e => setClientIdInput(e.target.value.trim())}
-                    className="bg-white border border-sky-200 rounded-xl p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-sky-400 transition-all"
-                  />
-                  <button
-                    onClick={() => {
-                      if (!clientIdInput || !clientIdInput.includes('.apps.googleusercontent.com')) {
-                        return showToast('正しいクライアントIDを入力してください', 'error');
-                      }
-                      drive.setClientId(clientIdInput);
-                      showToast('クライアントIDを保存しました');
-                    }}
-                    className="bg-sky-700 text-white font-bold py-3 rounded-xl transition-all active:scale-95 hover:bg-sky-700 shadow-sm flex items-center justify-center gap-2">
-                    <Save size={18} /> 保存して有効にする
-                  </button>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    同期が使えなくても、この端末の記録はこれまでどおり残ります。上の「バックアップを保存」でファイルに取り出せます。
+                  </p>
                 </div>
               ) : (
                 // ── クライアントID設定済み：接続・同期の操作 ──
@@ -2231,25 +2215,13 @@ const AdminView = ({ onClose, showToast, db, drive, ai, onGenerateReport, isPrin
                     />
                   </label>
 
-                  <div className="flex items-center justify-between gap-2 pt-1">
-                    {drive.connected && (
+                  {drive.connected && (
+                    <div className="flex items-center gap-2 pt-1">
                       <button onClick={drive.disconnect} className="text-xs text-slate-600 hover:text-slate-600 font-bold underline flex items-center gap-1">
                         <Unlink size={13} /> 接続を解除
                       </button>
-                    )}
-                    <button
-                      onClick={() => {
-                        if (!window.confirm('クライアントIDの設定を削除します。（同期は使えなくなりますが、端末内のデータは残ります）')) return;
-                        if (drive.connected) drive.disconnect();
-                        drive.setAutoSync(false);
-                        drive.setClientId('');
-                        setClientIdInput('');
-                        showToast('クライアントIDの設定を削除しました');
-                      }}
-                      className="text-xs text-slate-600 hover:text-red-700 font-bold underline ml-auto">
-                      クライアントIDを変更／削除
-                    </button>
-                  </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2306,8 +2278,13 @@ export default function App() {
   const [aiActivity, setAiActivity] = useLocalStorage('hp_ai_activity', []);
   const [schemaVersion, setSchemaVersion] = useLocalStorage('hp_schema_version', 1);
 
-  // ☁️ Googleドライブ同期の設定（クライアントID・自動同期のON/OFF）
-  const [driveClientId, setDriveClientId] = useLocalStorage('hp_gdrive_client_id', '');
+  // ☁️ Googleドライブ同期の設定（自動同期のON/OFF）
+  // クライアントIDは配信物に埋めこむ（src/googleDrive.js の CLIENT_ID）。
+  // 端末ごとに先生が貼りつける形はやめたが、それ以前に貼った値が端末に残っている。
+  // 消してしまうと、その端末では今日から同期が止まる。埋めこみが無いビルドのときだけ
+  // 引き継ぎとして使い、埋めこみがあればそちらを優先する。
+  const [legacyDriveClientId] = useLocalStorage('hp_gdrive_client_id', '');
+  const driveClientId = DRIVE_CLIENT_ID || legacyDriveClientId;
   const [driveAutoSync, setDriveAutoSync] = useLocalStorage('hp_gdrive_autosync', false);
   // AI接続資格情報は業務データと分離し、バックアップ・Drive同期へ含めない。
   const [aiProxyUrl, setAiProxyUrl] = useLocalStorage('hp_ai_proxy_url', '');
@@ -2378,9 +2355,9 @@ export default function App() {
   const driveSync = useGoogleDriveSync({ db, clientId: driveClientId, autoSync: driveAutoSync, showToast: showToastMsg });
   const drive = useMemo(() => ({
     ...driveSync,
-    clientId: driveClientId, setClientId: setDriveClientId,
+    clientId: driveClientId,
     autoSync: driveAutoSync, setAutoSync: setDriveAutoSync,
-  }), [driveSync, driveClientId, setDriveClientId, driveAutoSync, setDriveAutoSync]);
+  }), [driveSync, driveClientId, driveAutoSync, setDriveAutoSync]);
   const ai = useMemo(() => ({
     proxyUrl: aiProxyUrl,
     setProxyUrl: setAiProxyUrl,
