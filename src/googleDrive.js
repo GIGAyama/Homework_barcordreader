@@ -8,6 +8,24 @@
 
 const GSI_SRC = 'https://accounts.google.com/gsi/client';
 
+// OAuth クライアントIDは、ビルドのときに環境変数 VITE_GOOGLE_CLIENT_ID から埋めこむ。
+// 先生が画面に貼りつけるのではなく、配る側が一度だけ決める（ノート見本作成ツール PRO・
+// デジタル教材メイカーと同じ形）。設定のしかたは GOOGLE_DRIVE_SETUP.md にある。
+//
+// ⚠️ この値は秘密の鍵ではない。Web 向けの OAuth クライアントIDは、どのみち
+//    ブラウザの通信に出てくる公開の識別子で、知られてもデータは読めない。
+//    なりすましを防いでいるのは Google Cloud 側の「承認済みの JavaScript 生成元」で
+//    あって、この値を隠すことではない。だから配信物に埋めてよい。
+//    一方「クライアントシークレット」は本物の鍵なので、ここには置かないこと。
+//
+// import.meta.env は Vite がビルド時に差しこむ。素の Node（テスト）には無いので、
+// このファイルを単体で読み込めるよう存在を確かめてから触る。
+export const CLIENT_ID =
+  (typeof import.meta.env !== 'undefined' && import.meta.env.VITE_GOOGLE_CLIENT_ID) || '';
+
+// クライアントIDが埋まっているときだけ、同期の操作を出す。
+export const isConfigured = () => Boolean(CLIENT_ID);
+
 // このアプリが作成したファイルのみにアクセスできる、プライバシーに配慮したスコープ。
 // ユーザーのドライブ全体は見えないため、学校での運用でも安全。
 export const SCOPE = 'https://www.googleapis.com/auth/drive.file';
